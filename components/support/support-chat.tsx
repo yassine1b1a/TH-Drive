@@ -10,7 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send, Bot, User, Loader2, Sparkles, HelpCircle, CreditCard, Star, Car } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useChat } from "ai/react"
+import { useMimoChat } from "@/lib/hooks/use-mimo-chat"
+
 
 interface Message {
   id: string
@@ -36,7 +37,7 @@ export function SupportChat({ userId }: SupportChatProps) {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, setInput } = useChat({
+  const { messages, input, handleInputChange, handleSubmit, isLoading, setInput } = useMimoChat({
     api: "/api/support/chat",
     body: { userId },
     onFinish: async (message) => {
