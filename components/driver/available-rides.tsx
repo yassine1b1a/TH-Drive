@@ -364,7 +364,6 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
                   <Switch 
                     checked={showDistanceFilter} 
                     onCheckedChange={setShowDistanceFilter}
-                    size="sm"
                   />
                 </div>
               )}
