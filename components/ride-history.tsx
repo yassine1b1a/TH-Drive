@@ -39,6 +39,22 @@ import {
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 
+interface DriverDetails {
+  vehicle_make: string | null
+  vehicle_model: string | null
+  vehicle_plate: string | null
+  vehicle_color: string | null
+  vehicle_year: number | null
+}
+
+interface DriverProfile {
+  full_name: string | null
+  email: string
+  phone: string | null
+  rating: number | null
+  driver_details: DriverDetails[] | null
+}
+
 interface Ride {
   id: string
   user_id: string
@@ -65,19 +81,7 @@ interface Ride {
     phone: string | null
     rating: number | null
   }
-  driver?: {
-    full_name: string | null
-    email: string
-    phone: string | null
-    rating: number | null
-  }
-  driver_details?: {
-    vehicle_make: string | null
-    vehicle_model: string | null
-    vehicle_plate: string | null
-    vehicle_color: string | null
-    vehicle_year: number | null
-  }
+  driver?: DriverProfile | null
   rating?: {
     rating: number
     comment: string | null
@@ -121,7 +125,8 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
     try {
       const supabase = createClient()
       
-      // Build query based on role
+      // For user role: Get rides where user_id matches
+      // For driver role: Get rides where driver_id matches
       let query = supabase
         .from("rides")
         .select(`
@@ -138,13 +143,6 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
             phone,
             rating
           ),
-          driver_details:driver_details!driver_details_user_id_fkey (
-            vehicle_make,
-            vehicle_model,
-            vehicle_plate,
-            vehicle_color,
-            vehicle_year
-          ),
           ratings!left (
             rating,
             comment,
@@ -160,32 +158,56 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
         query = query.eq("driver_id", userId)
       }
 
-      const { data, error } = await query
+      const { data: ridesData, error: ridesError } = await query
 
-      if (error) throw error
+      if (ridesError) throw ridesError
 
-      const ridesData = data || []
-      setRides(ridesData as Ride[])
+      // Get driver details separately for rides that have a driver
+      const ridesWithDriverDetails = await Promise.all(
+        (ridesData || []).map(async (ride) => {
+          let driverDetails = null
+          
+          if (ride.driver_id) {
+            const { data: detailsData, error: detailsError } = await supabase
+              .from("driver_details")
+              .select("vehicle_make, vehicle_model, vehicle_plate, vehicle_color, vehicle_year")
+              .eq("user_id", ride.driver_id)
+              .single()
+            
+            if (!detailsError && detailsData) {
+              driverDetails = detailsData
+            }
+          }
+
+          return {
+            ...ride,
+            driver: ride.driver ? {
+              ...ride.driver,
+              driver_details: driverDetails
+            } : null
+          } as Ride
+        })
+      )
+
+      setRides(ridesWithDriverDetails)
 
       // Calculate stats
-      const totalRides = ridesData.length
-      const completedRides = ridesData.filter(r => r.status === "completed").length
+      const totalRides = ridesWithDriverDetails.length
+      const completedRides = ridesWithDriverDetails.filter(r => r.status === "completed").length
       
-      // Calculate earnings differently for user vs driver
       let totalEarnings = 0
       if (role === "user") {
-        totalEarnings = ridesData
+        totalEarnings = ridesWithDriverDetails
           .filter(r => r.status === "completed" && r.fare)
           .reduce((sum, ride) => sum + (ride.fare || 0), 0)
       } else if (role === "driver") {
-        // For driver, calculate earnings (you might want to apply commission rate)
-        totalEarnings = ridesData
+        totalEarnings = ridesWithDriverDetails
           .filter(r => r.status === "completed" && r.fare)
           .reduce((sum, ride) => sum + (ride.fare || 0), 0)
       }
       
       // Calculate average rating
-      const ratings = ridesData
+      const ratings = ridesWithDriverDetails
         .filter(r => r.ratings)
         .map(r => r.ratings?.rating || 0)
       const averageRating = ratings.length > 0 
@@ -332,6 +354,17 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
 
   const handleSendSupportMessage = (rideId: string) => {
     window.location.href = `/support?ride=${rideId}`
+  }
+
+  const getDriverVehicleInfo = (driver: DriverProfile | null | undefined) => {
+    if (!driver?.driver_details) return null
+    return {
+      make: driver.driver_details.vehicle_make,
+      model: driver.driver_details.vehicle_model,
+      plate: driver.driver_details.vehicle_plate,
+      color: driver.driver_details.vehicle_color,
+      year: driver.driver_details.vehicle_year
+    }
   }
 
   if (loading) {
@@ -509,134 +542,138 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedRides.map((ride) => (
-                      <TableRow key={ride.id} className="hover:bg-muted/50">
-                        <TableCell className="font-medium">
-                          <div className="flex flex-col">
-                            <span className="text-sm">{ride.id.substring(0, 8)}...</span>
-                            <span className="text-xs text-muted-foreground">
-                              {formatTimeAgo(ride.created_at)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="text-sm">{formatDate(ride.created_at)}</span>
-                            {ride.completed_at && (
+                    {paginatedRides.map((ride) => {
+                      const vehicleInfo = getDriverVehicleInfo(ride.driver)
+                      
+                      return (
+                        <TableRow key={ride.id} className="hover:bg-muted/50">
+                          <TableCell className="font-medium">
+                            <div className="flex flex-col">
+                              <span className="text-sm">{ride.id.substring(0, 8)}...</span>
                               <span className="text-xs text-muted-foreground">
-                                Completed: {formatDate(ride.completed_at)}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col space-y-1 max-w-[200px]">
-                            <div className="flex items-start gap-1">
-                              <MapPin className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />
-                              <span className="text-xs truncate">
-                                {ride.pickup_address || "No address"}
+                                {formatTimeAgo(ride.created_at)}
                               </span>
                             </div>
-                            <div className="flex items-start gap-1">
-                              <MapPin className="h-3 w-3 text-red-500 mt-0.5 flex-shrink-0" />
-                              <span className="text-xs truncate">
-                                {ride.dropoff_address || "No address"}
-                              </span>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Navigation className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs">{ride.distance_km?.toFixed(1) || "N/A"} km</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Clock className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs">{ride.estimated_duration_min || "N/A"} min</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <DollarSign className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs font-medium">
-                                ${ride.fare?.toFixed(2) || "0.00"}
-                              </span>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(ride.status)}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col space-y-1">
-                            {getPaymentStatusBadge(ride.payment_status)}
-                            <span className="text-xs text-muted-foreground capitalize">
-                              {ride.payment_method?.replace("_", " ") || "N/A"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">
-                              {role === "user" ? ride.driver?.full_name || "Driver" : ride.user?.full_name || "User"}
-                            </span>
-                            {role === "driver" && ride.user?.rating && (
-                              <div className="flex items-center gap-1 mt-1">
-                                <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                                <span className="text-xs">{ride.user.rating.toFixed(1)}</span>
-                              </div>
-                            )}
-                            {role === "user" && ride.driver_details && (
-                              <>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="text-sm">{formatDate(ride.created_at)}</span>
+                              {ride.completed_at && (
                                 <span className="text-xs text-muted-foreground">
-                                  {ride.driver_details.vehicle_make} {ride.driver_details.vehicle_model}
-                                  {ride.driver_details.vehicle_year && ` (${ride.driver_details.vehicle_year})`}
+                                  Completed: {formatDate(ride.completed_at)}
                                 </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {ride.driver_details.vehicle_plate}
-                                  {ride.driver_details.vehicle_color && ` • ${ride.driver_details.vehicle_color}`}
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col space-y-1 max-w-[200px]">
+                              <div className="flex items-start gap-1">
+                                <MapPin className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />
+                                <span className="text-xs truncate">
+                                  {ride.pickup_address || "No address"}
                                 </span>
-                              </>
-                            )}
-                            {role === "user" && ride.driver?.rating && (
-                              <div className="flex items-center gap-1 mt-1">
-                                <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                                <span className="text-xs">{ride.driver.rating.toFixed(1)}</span>
                               </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setSelectedRide(ride)}
-                              className="h-8 px-2"
-                            >
-                              Details
-                            </Button>
-                            {ride.status === "completed" && !ride.rating && role === "user" && (
+                              <div className="flex items-start gap-1">
+                                <MapPin className="h-3 w-3 text-red-500 mt-0.5 flex-shrink-0" />
+                                <span className="text-xs truncate">
+                                  {ride.dropoff_address || "No address"}
+                                </span>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Navigation className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs">{ride.distance_km?.toFixed(1) || "N/A"} km</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs">{ride.estimated_duration_min || "N/A"} min</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <DollarSign className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs font-medium">
+                                  ${ride.fare?.toFixed(2) || "0.00"}
+                                </span>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{getStatusBadge(ride.status)}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col space-y-1">
+                              {getPaymentStatusBadge(ride.payment_status)}
+                              <span className="text-xs text-muted-foreground capitalize">
+                                {ride.payment_method?.replace("_", " ") || "N/A"}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium">
+                                {role === "user" ? ride.driver?.full_name || "Driver" : ride.user?.full_name || "User"}
+                              </span>
+                              {role === "driver" && ride.user?.rating && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                                  <span className="text-xs">{ride.user.rating.toFixed(1)}</span>
+                                </div>
+                              )}
+                              {role === "user" && vehicleInfo && (
+                                <>
+                                  <span className="text-xs text-muted-foreground">
+                                    {vehicleInfo.make} {vehicleInfo.model}
+                                    {vehicleInfo.year && ` (${vehicleInfo.year})`}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {vehicleInfo.plate}
+                                    {vehicleInfo.color && ` • ${vehicleInfo.color}`}
+                                  </span>
+                                </>
+                              )}
+                              {role === "user" && ride.driver?.rating && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                                  <span className="text-xs">{ride.driver.rating.toFixed(1)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
-                                onClick={() => window.location.href = `/rate/${ride.id}`}
+                                onClick={() => setSelectedRide(ride)}
                                 className="h-8 px-2"
                               >
-                                <Star className="h-3 w-3 mr-1" />
-                                Rate
+                                Details
                               </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleSendSupportMessage(ride.id)}
-                              className="h-8 px-2"
-                            >
-                              <MessageCircle className="h-3 w-3 mr-1" />
-                              Support
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                              {ride.status === "completed" && !ride.rating && role === "user" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => window.location.href = `/rate/${ride.id}`}
+                                  className="h-8 px-2"
+                                >
+                                  <Star className="h-3 w-3 mr-1" />
+                                  Rate
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleSendSupportMessage(ride.id)}
+                                className="h-8 px-2"
+                              >
+                                <MessageCircle className="h-3 w-3 mr-1" />
+                                Support
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -820,15 +857,15 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                           ? selectedRide.driver?.email || "No email"
                           : selectedRide.user?.email || "No email"}
                       </p>
-                      {role === "user" && selectedRide.driver_details && (
+                      {role === "user" && selectedRide.driver?.driver_details && (
                         <>
                           <p className="text-sm text-muted-foreground mt-1">
-                            {selectedRide.driver_details.vehicle_make} {selectedRide.driver_details.vehicle_model}
-                            {selectedRide.driver_details.vehicle_year && ` (${selectedRide.driver_details.vehicle_year})`}
+                            {selectedRide.driver.driver_details.vehicle_make} {selectedRide.driver.driver_details.vehicle_model}
+                            {selectedRide.driver.driver_details.vehicle_year && ` (${selectedRide.driver.driver_details.vehicle_year})`}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            License Plate: {selectedRide.driver_details.vehicle_plate}
-                            {selectedRide.driver_details.vehicle_color && ` • Color: ${selectedRide.driver_details.vehicle_color}`}
+                            License Plate: {selectedRide.driver.driver_details.vehicle_plate}
+                            {selectedRide.driver.driver_details.vehicle_color && ` • Color: ${selectedRide.driver.driver_details.vehicle_color}`}
                           </p>
                           {selectedRide.driver?.rating && (
                             <div className="flex items-center gap-1 mt-1">
