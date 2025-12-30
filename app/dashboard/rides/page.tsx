@@ -1,6 +1,6 @@
 "use client"
 
-import { RideHistoryPage } from "@/components/ride-history"
+import { RideHistory } from "@/components/ride-history"
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
 import { UserSidebar } from "@/components/dashboard/user-sidebar"
@@ -57,7 +57,7 @@ export default function UserRidesPage() {
           <h1 className="text-3xl font-bold">My Rides</h1>
           <p className="text-muted-foreground">View your ride history</p>
         </div>
-        <RideHistoryPage userId={userId} role="user" />
+        <RideHistory userId={userId} role="user" />
       </main>
     </div>
   )
