@@ -52,7 +52,7 @@ interface DriverProfile {
   email: string
   phone: string | null
   rating: number | null
-  driver_details: DriverDetails[] | null
+  driver_details: DriverDetails | null
 }
 
 interface Ride {
@@ -82,11 +82,11 @@ interface Ride {
     rating: number | null
   }
   driver?: DriverProfile | null
-  rating?: {
+  ratings?: {
     rating: number
     comment: string | null
     created_at: string
-  }
+  }[]
 }
 
 const ITEMS_PER_PAGE = 10
@@ -208,8 +208,8 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
       
       // Calculate average rating
       const ratings = ridesWithDriverDetails
-        .filter(r => r.ratings)
-        .map(r => r.ratings?.rating || 0)
+        .filter(r => r.ratings && r.ratings.length > 0)
+        .map(r => r.ratings![0]?.rating || 0)
       const averageRating = ratings.length > 0 
         ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length 
         : 0
@@ -335,7 +335,7 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
       ride.payment_method?.replace("_", " ") || "N/A",
       ride.payment_status,
       role === "user" ? ride.driver?.full_name || "N/A" : ride.user?.full_name || "N/A",
-      ride.rating?.rating || "Not rated",
+      ride.ratings?.[0]?.rating || "Not rated",
     ])
 
     const csvContent = [
@@ -365,6 +365,10 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
       color: driver.driver_details.vehicle_color,
       year: driver.driver_details.vehicle_year
     }
+  }
+
+  const getRideRating = (ride: Ride) => {
+    return ride.ratings?.[0] || null
   }
 
   if (loading) {
@@ -544,6 +548,7 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                   <TableBody>
                     {paginatedRides.map((ride) => {
                       const vehicleInfo = getDriverVehicleInfo(ride.driver)
+                      const rideRating = getRideRating(ride)
                       
                       return (
                         <TableRow key={ride.id} className="hover:bg-muted/50">
@@ -649,7 +654,7 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                               >
                                 Details
                               </Button>
-                              {ride.status === "completed" && !ride.rating && role === "user" && (
+                              {ride.status === "completed" && !rideRating && role === "user" && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -887,7 +892,7 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
               </div>
 
               {/* Rating */}
-              {selectedRide.rating && (
+              {selectedRide.ratings && selectedRide.ratings.length > 0 && (
                 <>
                   <Separator />
                   <div>
@@ -899,20 +904,20 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                             <Star
                               key={i}
                               className={`h-4 w-4 ${
-                                i < selectedRide.rating!.rating
+                                i < selectedRide.ratings![0].rating
                                   ? "fill-yellow-500 text-yellow-500"
                                   : "text-muted-foreground"
                               }`}
                             />
                           ))}
                         </div>
-                        <span className="text-sm font-medium">{selectedRide.rating.rating}/5</span>
+                        <span className="text-sm font-medium">{selectedRide.ratings[0].rating}/5</span>
                       </div>
-                      {selectedRide.rating.comment && (
-                        <p className="text-sm mt-2">"{selectedRide.rating.comment}"</p>
+                      {selectedRide.ratings[0].comment && (
+                        <p className="text-sm mt-2">"{selectedRide.ratings[0].comment}"</p>
                       )}
                       <p className="text-xs text-muted-foreground mt-2">
-                        Rated on {formatDate(selectedRide.rating.created_at)}
+                        Rated on {formatDate(selectedRide.ratings[0].created_at)}
                       </p>
                     </div>
                   </div>
