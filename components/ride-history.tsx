@@ -70,9 +70,13 @@ interface Ride {
     email: string
     phone: string | null
     rating: number | null
+  }
+  driver_details?: {
     vehicle_make: string | null
     vehicle_model: string | null
     vehicle_plate: string | null
+    vehicle_color: string | null
+    vehicle_year: number | null
   }
   rating?: {
     rating: number
@@ -118,31 +122,36 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
       const supabase = createClient()
       
       // Build query based on role
-      // In your loadRides function, update the query to:
-let query = supabase
-  .from("rides")
-  .select(`
-    *,
-    user:profiles!rides_user_id_fkey (
-      full_name,
-      email,
-      phone,
-      rating
-    ),
-    driver:profiles!rides_driver_id_fkey (
-      full_name,
-      email,
-      phone,
-      rating
-      -- Remove vehicle_make, vehicle_model, vehicle_plate
-    ),
-    ratings!left (
-      rating,
-      comment,
-      created_at
-    )
-  `)
-  .order("created_at", { ascending: false })
+      let query = supabase
+        .from("rides")
+        .select(`
+          *,
+          user:profiles!rides_user_id_fkey (
+            full_name,
+            email,
+            phone,
+            rating
+          ),
+          driver:profiles!rides_driver_id_fkey (
+            full_name,
+            email,
+            phone,
+            rating
+          ),
+          driver_details:driver_details!driver_details_user_id_fkey (
+            vehicle_make,
+            vehicle_model,
+            vehicle_plate,
+            vehicle_color,
+            vehicle_year
+          ),
+          ratings!left (
+            rating,
+            comment,
+            created_at
+          )
+        `)
+        .order("created_at", { ascending: false })
 
       // Filter based on role
       if (role === "user") {
@@ -574,10 +583,17 @@ let query = supabase
                                 <span className="text-xs">{ride.user.rating.toFixed(1)}</span>
                               </div>
                             )}
-                            {role === "user" && ride.driver?.vehicle_make && ride.driver?.vehicle_model && (
-                              <span className="text-xs text-muted-foreground">
-                                {ride.driver.vehicle_make} {ride.driver.vehicle_model}
-                              </span>
+                            {role === "user" && ride.driver_details && (
+                              <>
+                                <span className="text-xs text-muted-foreground">
+                                  {ride.driver_details.vehicle_make} {ride.driver_details.vehicle_model}
+                                  {ride.driver_details.vehicle_year && ` (${ride.driver_details.vehicle_year})`}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {ride.driver_details.vehicle_plate}
+                                  {ride.driver_details.vehicle_color && ` • ${ride.driver_details.vehicle_color}`}
+                                </span>
+                              </>
                             )}
                             {role === "user" && ride.driver?.rating && (
                               <div className="flex items-center gap-1 mt-1">
@@ -804,18 +820,20 @@ let query = supabase
                           ? selectedRide.driver?.email || "No email"
                           : selectedRide.user?.email || "No email"}
                       </p>
-                      {role === "user" && selectedRide.driver && (
+                      {role === "user" && selectedRide.driver_details && (
                         <>
                           <p className="text-sm text-muted-foreground mt-1">
-                            {selectedRide.driver.vehicle_make} {selectedRide.driver.vehicle_model}
+                            {selectedRide.driver_details.vehicle_make} {selectedRide.driver_details.vehicle_model}
+                            {selectedRide.driver_details.vehicle_year && ` (${selectedRide.driver_details.vehicle_year})`}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {selectedRide.driver.vehicle_plate}
+                            License Plate: {selectedRide.driver_details.vehicle_plate}
+                            {selectedRide.driver_details.vehicle_color && ` • Color: ${selectedRide.driver_details.vehicle_color}`}
                           </p>
-                          {selectedRide.driver.rating && (
+                          {selectedRide.driver?.rating && (
                             <div className="flex items-center gap-1 mt-1">
                               <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                              <span className="text-sm">{selectedRide.driver.rating.toFixed(1)}</span>
+                              <span className="text-sm">Driver Rating: {selectedRide.driver.rating.toFixed(1)}</span>
                             </div>
                           )}
                         </>
