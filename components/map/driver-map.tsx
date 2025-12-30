@@ -18,6 +18,18 @@ if (typeof window !== "undefined") {
   })
 }
 
+// Type assertion for leaflet-routing-machine since types are not properly exported
+declare global {
+  interface Window {
+    L: typeof L & {
+      Routing: {
+        control: (options: any) => any
+        OSRMv1: new (options: { serviceUrl: string; profile: string }) => any
+      }
+    }
+  }
+}
+
 interface DriverMapProps {
   center?: LatLng
   markers?: Array<{
@@ -43,7 +55,7 @@ export function DriverMap({
 }: DriverMapProps) {
   const mapRef = useRef<L.Map | null>(null)
   const mapContainerRef = useRef<HTMLDivElement>(null)
-  const routingControlRef = useRef<L.Routing.Control | null>(null)
+  const routingControlRef = useRef<any>(null)
   const markersRef = useRef<L.Marker[]>([])
   const routeLayerRef = useRef<L.Polyline | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -217,7 +229,8 @@ export function DriverMap({
       try {
         const waypoints = route.map((point) => L.latLng(point.lat, point.lng))
         
-        const routingControl = L.Routing.control({
+        // Create routing control using L.Routing.control from leaflet-routing-machine
+        const routingControl = (L as any).Routing.control({
           waypoints,
           routeWhileDragging: false,
           showAlternatives: false,
@@ -226,11 +239,13 @@ export function DriverMap({
             extendToWaypoints: true,
             missingRouteTolerance: 0,
           },
-          createMarker: () => null, // Don't create markers, we have our own
-          router: new (L.Routing as any).OSRMv1({
+          router: new (L as any).Routing.OSRMv1({
             serviceUrl: "https://router.project-osrm.org/route/v1",
             profile: "driving",
           }),
+          fitSelectedRoutes: true,
+          show: false,
+          createMarker: () => null,
         })
 
         routingControl.hide()
@@ -374,8 +389,26 @@ export async function getRoute(start: LatLng, end: LatLng): Promise<{ route: Lat
   }
 }
 
+export async function searchAddress(query: string): Promise<Array<{ lat: number; lng: number; display_name: string }>> {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`
+    )
+    const data = await response.json()
+    
+    return data.map((item: any) => ({
+      lat: parseFloat(item.lat),
+      lng: parseFloat(item.lon),
+      display_name: item.display_name
+    }))
+  } catch (error) {
+    console.error('Error searching address:', error)
+    return []
+  }
+}
+
 // Helper function to calculate distance between two points (Haversine formula)
-function calculateDistance(point1: LatLng, point2: LatLng): number {
+export function calculateDistance(point1: LatLng, point2: LatLng): number {
   const R = 6371 // Earth's radius in km
   const dLat = toRad(point2.lat - point1.lat)
   const dLon = toRad(point2.lng - point1.lng)
@@ -389,3 +422,6 @@ function calculateDistance(point1: LatLng, point2: LatLng): number {
 function toRad(degrees: number): number {
   return degrees * (Math.PI / 180)
 }
+
+// Export type
+export type { LatLng }

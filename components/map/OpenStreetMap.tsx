@@ -34,7 +34,7 @@ export default function OpenStreetMap({
 }: OpenStreetMapProps) {
   const mapRef = useRef<L.Map | null>(null)
   const mapContainerRef = useRef<HTMLDivElement>(null)
-  const routingControlRef = useRef<L.Routing.Control | null>(null)
+  const routingControlRef = useRef<any>(null)
   const markersRef = useRef<L.Marker[]>([])
   const [availableDrivers, setAvailableDrivers] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -204,8 +204,27 @@ export default function OpenStreetMap({
         routingControlRef.current = null
       }
 
-      // Calculate route using OSRM
-      const routingControl = L.Routing.control({
+      // Add pickup and dropoff markers
+      const pickupMarker = L.marker([pickupLocation.lat, pickupLocation.lng], {
+        icon: L.divIcon({
+          html: '<div class="w-6 h-6 bg-green-500 rounded-full border-2 border-white shadow-lg"></div>',
+          className: 'pickup-marker',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+        })
+      }).addTo(mapRef.current!).bindPopup('Pickup Location')
+
+      const dropoffMarker = L.marker([dropoffLocation.lat, dropoffLocation.lng], {
+        icon: L.divIcon({
+          html: '<div class="w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-lg"></div>',
+          className: 'dropoff-marker',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+        })
+      }).addTo(mapRef.current!).bindPopup('Dropoff Location')
+
+      // Calculate route using OSRM - simplified approach without createMarker
+      const routingControl = (L as any).Routing.control({
         waypoints: [
           L.latLng(pickupLocation.lat, pickupLocation.lng),
           L.latLng(dropoffLocation.lat, dropoffLocation.lng),
@@ -217,22 +236,14 @@ export default function OpenStreetMap({
           extendToWaypoints: true,
           missingRouteTolerance: 0,
         },
-        createMarker: (i: number, waypoint: any, n: number) => {
-          const icon = L.divIcon({
-            html: i === 0 
-              ? `<div class="w-6 h-6 bg-green-500 rounded-full border-2 border-white shadow-lg"></div>`
-              : `<div class="w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-lg"></div>`,
-            className: 'waypoint-marker',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-          })
-          return L.marker(waypoint.latLng, { icon })
-        },
-        router: new (L.Routing as any).OSRMv1({
+        router: new (L as any).Routing.OSRMv1({
           serviceUrl: 'https://router.project-osrm.org/route/v1',
           profile: 'driving',
         }),
-      }).addTo(mapRef.current)
+        fitSelectedRoutes: true,
+        show: false,
+        // Remove createMarker option to avoid type errors
+      })
 
       routingControlRef.current = routingControl
 
@@ -255,6 +266,8 @@ export default function OpenStreetMap({
       routingControl.on('routingerror', function(e: any) {
         safeLog.error('Routing error:', e.error)
       })
+
+      routingControlRef.current.addTo(mapRef.current)
 
     } catch (error) {
       safeLog.error('Error setting up routing:', error)
@@ -286,7 +299,9 @@ export default function OpenStreetMap({
     return () => {
       mapRef.current?.getContainer().removeEventListener('click', handleMapClick)
     }
-  }, [availableDrivers, onDriverSelected])// Handle driver selection
+  }, [availableDrivers, onDriverSelected])
+
+  // Handle driver selection
   useEffect(() => {
     if (!mapRef.current || !onDriverSelected) return
 
@@ -349,7 +364,7 @@ export default function OpenStreetMap({
           background: transparent;
           border: none;
         }
-        .waypoint-marker {
+        .pickup-marker, .dropoff-marker {
           background: transparent;
           border: none;
         }

@@ -58,18 +58,19 @@ interface RouteInfo {
 
 interface Driver {
   user_id: string
-  current_lat: number
-  current_lng: number
+  current_lat: number | null
+  current_lng: number | null
   vehicle_make: string
   vehicle_model: string
   vehicle_color: string
   vehicle_plate: string
   is_online: boolean
+  is_verified: boolean
   profiles: {
-    full_name: string
-    rating: number
-    total_rides: number
-    avatar_url?: string
+    full_name: string | null
+    rating: number | null
+    total_rides: number | null
+    avatar_url?: string | null
   }
 }
 
@@ -188,7 +189,7 @@ export default function BookRidePage() {
         if (error) throw error
 
         // Transform the data to match our interface
-        const drivers: Driver[] = (driversData || []).map(driver => ({
+        const drivers: Driver[] = (driversData || []).map((driver: any) => ({
           user_id: driver.user_id,
           current_lat: driver.current_lat,
           current_lng: driver.current_lng,
@@ -198,19 +199,25 @@ export default function BookRidePage() {
           vehicle_plate: driver.vehicle_plate || '',
           is_online: driver.is_online || false,
           is_verified: driver.is_verified || false,
-          profile: driver.profiles?.[0] || {  // Extract first profile
-            full_name: 'Unknown Driver',
-            rating: 5.0,
-            total_rides: 0
+          profiles: (Array.isArray(driver.profiles) ? driver.profiles[0] : driver.profiles) || {
+            full_name: null,
+            rating: null,
+            total_rides: null,
+            avatar_url: null
           }
         }))
 
         console.log('Fetched drivers:', drivers.length)
         setAvailableDrivers(drivers)
 
+        // Filter drivers with valid coordinates
+        const driversWithCoords = drivers.filter(
+          driver => driver.current_lat !== null && driver.current_lng !== null
+        )
+
         // If we have pickup location, find nearest driver
-        if (pickupLocation && drivers && drivers.length > 0) {
-          const nearest = findNearestDriver(drivers, pickupLocation)
+        if (pickupLocation && driversWithCoords.length > 0) {
+          const nearest = findNearestDriver(driversWithCoords as Driver[], pickupLocation)
           setNearestDriver(nearest)
           setSelectedDriver(nearest)
         }
@@ -223,7 +230,7 @@ export default function BookRidePage() {
     }
 
     fetchAvailableDrivers()
-    const interval = setInterval(fetchAvailableDrivers, 30000) // Refresh every 30 seconds
+    const interval = setInterval(fetchAvailableDrivers, 30000)
 
     return () => clearInterval(interval)
   }, [pickupLocation])
@@ -237,9 +244,9 @@ export default function BookRidePage() {
       
       // Calculate ETA (route time + driver arrival time)
       let driverArrivalTime = 5 // Default 5 minutes if no driver
-      if (selectedDriver) {
+      if (selectedDriver && selectedDriver.current_lat && selectedDriver.current_lng) {
         driverArrivalTime = estimateArrivalTime(selectedDriver, pickupLocation)
-      } else if (nearestDriver) {
+      } else if (nearestDriver && nearestDriver.current_lat && nearestDriver.current_lng) {
         driverArrivalTime = estimateArrivalTime(nearestDriver, pickupLocation)
       }
       
@@ -391,6 +398,27 @@ export default function BookRidePage() {
     { id: 'qr', name: 'QR Code', icon: CreditCard },
     { id: 'cash', name: 'Cash', icon: DollarSign },
   ]
+
+  // Helper function to get driver initials
+  const getDriverInitials = (driver: Driver) => {
+    const name = driver.profiles.full_name || 'Driver'
+    return name.charAt(0).toUpperCase()
+  }
+
+  // Helper function to get driver rating
+  const getDriverRating = (driver: Driver) => {
+    return (driver.profiles.rating || 5.0).toFixed(1)
+  }
+
+  // Helper function to get driver ride count
+  const getDriverRideCount = (driver: Driver) => {
+    return driver.profiles.total_rides || 0
+  }
+
+  // Helper function to check if driver has valid coordinates
+  const hasValidCoordinates = (driver: Driver | null) => {
+    return driver && driver.current_lat !== null && driver.current_lng !== null
+  }
 
   if (loading) {
     return (
@@ -574,7 +602,7 @@ export default function BookRidePage() {
                             <div className="flex items-center gap-3">
                               <div className="flex-shrink-0">
                                 <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
-                                  {driver.profiles.full_name?.[0] || 'D'}
+                                  {getDriverInitials(driver)}
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
@@ -582,14 +610,14 @@ export default function BookRidePage() {
                                   <p className="font-medium truncate">{driver.profiles.full_name || 'Driver'}</p>
                                   <div className="flex items-center">
                                     <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 mr-1" />
-                                    <span className="text-xs">{driver.profiles.rating?.toFixed(1) || '5.0'}</span>
+                                    <span className="text-xs">{getDriverRating(driver)}</span>
                                   </div>
                                 </div>
                                 <p className="text-xs text-muted-foreground truncate">
                                   {driver.vehicle_make} {driver.vehicle_model} • {driver.vehicle_color}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {driver.profiles.total_rides || 0} rides
+                                  {getDriverRideCount(driver)} rides
                                 </p>
                               </div>
                               {selectedDriver?.user_id === driver.user_id && (
@@ -606,16 +634,16 @@ export default function BookRidePage() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className="h-12 w-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-lg">
-                              {selectedDriver.profiles.full_name?.[0] || 'D'}
+                              {getDriverInitials(selectedDriver)}
                             </div>
                             <div>
                               <p className="font-semibold">{selectedDriver.profiles.full_name || 'Driver'}</p>
                               <div className="flex items-center gap-2">
                                 <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                                <span className="text-sm">{selectedDriver.profiles.rating?.toFixed(1) || '5.0'}</span>
+                                <span className="text-sm">{getDriverRating(selectedDriver)}</span>
                                 <span className="text-sm text-muted-foreground">•</span>
                                 <span className="text-sm text-muted-foreground">
-                                  {selectedDriver.profiles.total_rides || 0} rides
+                                  {getDriverRideCount(selectedDriver)} rides
                                 </span>
                               </div>
                               <p className="text-sm text-muted-foreground">
@@ -627,7 +655,7 @@ export default function BookRidePage() {
                             {selectedDriver.vehicle_plate}
                           </Badge>
                         </div>
-                        {pickupLocation && (
+                        {pickupLocation && hasValidCoordinates(selectedDriver) && (
                           <div className="mt-3 text-sm">
                             <div className="flex items-center gap-2">
                               <Clock className="h-4 w-4 text-muted-foreground" />
@@ -728,16 +756,16 @@ export default function BookRidePage() {
                         <div className="flex items-center gap-3 p-3 rounded-lg bg-muted">
                           <div className="flex-shrink-0">
                             <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
-                              {selectedDriver.profiles.full_name?.[0] || 'D'}
+                              {getDriverInitials(selectedDriver)}
                             </div>
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-medium truncate">{selectedDriver.profiles.full_name || 'Driver'}</p>
                             <div className="flex items-center gap-2 mt-1">
                               <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                              <span className="text-sm">{selectedDriver.profiles.rating?.toFixed(1) || '5.0'}</span>
+                              <span className="text-sm">{getDriverRating(selectedDriver)}</span>
                               <span className="text-sm text-muted-foreground">
-                                ({selectedDriver.profiles.total_rides || 0} rides)
+                                ({getDriverRideCount(selectedDriver)} rides)
                               </span>
                             </div>
                             <p className="text-sm text-muted-foreground truncate">
@@ -856,7 +884,7 @@ export default function BookRidePage() {
               ) : (
                 <>
                   <Car className="mr-2 h-5 w-5" />
-                  {selectedDriver ? `Book with ${selectedDriver.profiles.full_name?.split(' ')[0] || 'Driver'}` : 'Book Ride'}
+                  {selectedDriver ? `Book with ${(selectedDriver.profiles.full_name || 'Driver').split(' ')[0]}` : 'Book Ride'}
                 </>
               )}
             </Button>

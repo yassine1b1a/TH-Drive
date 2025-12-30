@@ -2,16 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  // Enable Turbopack
-  experimental: {
-    turbo: {},
-  },
+  // Remove problematic experimental features
+  // experimental: {},
 }
 
-export default nextConfig
+module.exports = nextConfig
