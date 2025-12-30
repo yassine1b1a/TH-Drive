@@ -1,9 +1,9 @@
 "use client"
 
-import { RideHistory } from "@/components/ride-history"
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
 import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
+import { Card, CardContent } from "@/components/ui/card"
 
 export default function DriverHistoryPage() {
   const [userId, setUserId] = useState<string>("")
@@ -73,7 +73,12 @@ export default function DriverHistoryPage() {
           <h1 className="text-3xl font-bold">Driver History</h1>
           <p className="text-muted-foreground">View your completed rides and earnings</p>
         </div>
-        <RideHistory userId={userId} role="driver" />
+        <Card>
+          <CardContent className="pt-6">
+            <p>Driver ride history will be displayed here</p>
+            <p>User ID: {userId}</p>
+          </CardContent>
+        </Card>
       </main>
     </div>
   )
