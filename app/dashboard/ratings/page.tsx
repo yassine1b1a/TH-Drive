@@ -18,10 +18,13 @@ interface Rating {
     id: string
     pickup_address: string | null
     dropoff_address: string | null
-  } | null
+  }[] | null
   rater: {
     full_name: string | null
-  } | null
+  }[] | null
+  rated?: {
+    full_name: string | null
+  }[] | null
 }
 
 interface Profile {
@@ -66,10 +69,12 @@ export default function RatingsPage() {
 
       setProfile(profileData)
 
+      let ratingsData: any[] = []
+      
       // Load ratings based on role
       if (profileData?.role === "driver") {
         // For drivers: Get ratings where they were rated (rated_id = driver's id)
-        const { data: ratingsData } = await supabase
+        const { data } = await supabase
           .from("ratings")
           .select(`
             id,
@@ -89,10 +94,10 @@ export default function RatingsPage() {
           .order("created_at", { ascending: false })
           .limit(10)
 
-        setRatings(ratingsData || [])
+        ratingsData = data || []
       } else {
         // For users: Get ratings they gave to drivers
-        const { data: ratingsData } = await supabase
+        const { data } = await supabase
           .from("ratings")
           .select(`
             id,
@@ -112,22 +117,18 @@ export default function RatingsPage() {
           .order("created_at", { ascending: false })
           .limit(10)
 
-        // Transform data to match interface
-        const transformedRatings = (ratingsData || []).map(rating => ({
-          ...rating,
-          rater: null, // User is the rater, not the ratee
-        }))
-        setRatings(transformedRatings)
+        ratingsData = data || []
       }
 
+      setRatings(ratingsData)
+
       // Calculate stats
-      const allRatings = ratingsData || []
-      const totalRatings = allRatings.length
+      const totalRatings = ratingsData.length
       const averageRating = totalRatings > 0 
-        ? allRatings.reduce((sum, r) => sum + r.rating, 0) / totalRatings
+        ? ratingsData.reduce((sum, r) => sum + r.rating, 0) / totalRatings
         : 0
-      const fiveStarRatings = allRatings.filter(r => r.rating === 5).length
-      const recentRatings = allRatings.filter(r => {
+      const fiveStarRatings = ratingsData.filter(r => r.rating === 5).length
+      const recentRatings = ratingsData.filter(r => {
         const ratingDate = new Date(r.created_at)
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
         return ratingDate > thirtyDaysAgo
@@ -289,62 +290,73 @@ export default function RatingsPage() {
               </div>
             ) : (
               <div className="space-y-6">
-                {ratings.map((rating) => (
-                  <div key={rating.id} className="p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <User className="h-5 w-5 text-primary" />
+                {ratings.map((rating) => {
+                  const rideInfo = rating.ride?.[0]
+                  const raterInfo = rating.rater?.[0]
+                  const ratedInfo = rating.rated?.[0]
+                  
+                  return (
+                    <div key={rating.id} className="p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <User className="h-5 w-5 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium">
+                              {isDriver 
+                                ? raterInfo?.full_name || "Passenger"
+                                : ratedInfo?.full_name || "Driver"
+                              }
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {formatTimeAgo(rating.created_at)}
+                              {rideInfo && ` • Ride: ${rideInfo.id.slice(0, 8)}...`}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">
-                            {isDriver 
-                              ? rating.rater?.full_name || "Passenger"
-                              : `Ride: ${rating.ride?.pickup_address?.split(",")[0] || "Unknown"} → ${rating.ride?.dropoff_address?.split(",")[0] || "Unknown"}`
-                            }
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {formatTimeAgo(rating.created_at)}
-                          </p>
+                        <div className="flex items-center gap-1">
+                          {[...Array(5)].map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`h-4 w-4 ${
+                                i < rating.rating
+                                  ? "fill-yellow-500 text-yellow-500"
+                                  : "text-gray-300"
+                              }`}
+                            />
+                          ))}
+                          <span className="ml-2 font-semibold">{rating.rating}.0</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {[...Array(5)].map((_, i) => (
-                          <Star
-                            key={i}
-                            className={`h-4 w-4 ${
-                              i < rating.rating
-                                ? "fill-yellow-500 text-yellow-500"
-                                : "text-gray-300"
-                            }`}
-                          />
-                        ))}
-                        <span className="ml-2 font-semibold">{rating.rating}.0</span>
-                      </div>
-                    </div>
-                    
-                    {rating.comment && (
-                      <div className="pl-13">
-                        <p className="text-sm text-muted-foreground italic">"{rating.comment}"</p>
-                      </div>
-                    )}
+                      
+                      {rating.comment && (
+                        <div className="pl-13">
+                          <p className="text-sm text-muted-foreground italic">"{rating.comment}"</p>
+                        </div>
+                      )}
 
-                    {rating.ride && (
-                      <div className="mt-3 pl-13">
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <div className="h-2 w-2 rounded-full bg-green-500" />
-                            {rating.ride.pickup_address?.split(",")[0] || "Pickup"}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <div className="h-2 w-2 rounded-full bg-red-500" />
-                            {rating.ride.dropoff_address?.split(",")[0] || "Dropoff"}
-                          </span>
+                      {rideInfo && (
+                        <div className="mt-3 pl-13">
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            {rideInfo.pickup_address && (
+                              <span className="flex items-center gap-1">
+                                <div className="h-2 w-2 rounded-full bg-green-500" />
+                                {rideInfo.pickup_address.split(",")[0]}
+                              </span>
+                            )}
+                            {rideInfo.dropoff_address && (
+                              <span className="flex items-center gap-1">
+                                <div className="h-2 w-2 rounded-full bg-red-500" />
+                                {rideInfo.dropoff_address.split(",")[0]}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </CardContent>
