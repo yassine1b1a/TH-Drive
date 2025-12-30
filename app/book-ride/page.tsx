@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
   Loader2, 
   MapPin, 
@@ -27,21 +28,10 @@ import {
   Calendar,
   CreditCard,
   User,
-  Sparkles,
-  Compass
+  Sparkles
 } from 'lucide-react'
 import { calculateFare, estimateArrivalTime, findNearestDriver } from '@/lib/ride/calculations'
-import dynamic from 'next/dynamic'
-
-// Dynamically import the map component with SSR disabled
-const UnifiedMap = dynamic(() => import('@/components/map/UnifiedMap'), {
-  ssr: false,
-  loading: () => (
-    <div className="h-full w-full flex items-center justify-center bg-gray-100">
-      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-    </div>
-  )
-})
+import UnifiedMap from '@/components/map/UnifiedMap'
 
 interface Location {
   lat: number
@@ -66,27 +56,12 @@ interface Driver {
   vehicle_plate: string
   is_online: boolean
   is_verified: boolean
-  distance?: number
   profiles: {
     full_name: string | null
     rating: number | null
     total_rides: number | null
     avatar_url?: string | null
   }
-}
-
-// Haversine formula to calculate distance between two points in kilometers
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371 // Earth's radius in kilometers
-  const dLat = (lat2 - lat1) * (Math.PI / 180)
-  const dLon = (lon2 - lon1) * (Math.PI / 180)
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) *
-    Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
 }
 
 export default function BookRidePage() {
@@ -110,21 +85,11 @@ export default function BookRidePage() {
   const [searchingPickup, setSearchingPickup] = useState(false)
   const [searchingDropoff, setSearchingDropoff] = useState(false)
   const [showDriverList, setShowDriverList] = useState(false)
-  const [searchRadius, setSearchRadius] = useState<number>(10) // Default 10km radius
-  const [locationPermission, setLocationPermission] = useState<boolean>(true)
-  const [isClient, setIsClient] = useState(false)
 
-  // Check if we're on the client side
+  // Get user's current location
   useEffect(() => {
-    setIsClient(true)
-  }, [])
-
-  // Get user's current location - only runs on client side
-  useEffect(() => {
-    if (!isClient) return
-
     const getUserLocation = () => {
-      if (typeof window !== 'undefined' && navigator.geolocation) {
+      if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
             const { latitude, longitude } = position.coords
@@ -145,18 +110,15 @@ export default function BookRidePage() {
               setUserLocation(location)
               setPickupLocation(location)
               setPickupAddress(data.display_name || 'Current location')
-              setLocationPermission(true)
             } catch (error) {
               // If address lookup fails, still set coordinates
               const location: Location = { lat: latitude, lng: longitude }
               setUserLocation(location)
               setPickupLocation(location)
-              setLocationPermission(true)
             }
           },
           (error) => {
             console.error('Error getting location:', error)
-            setLocationPermission(false)
             // Default to a central location if geolocation fails
             const defaultLocation: Location = {
               lat: 40.7128,
@@ -169,7 +131,6 @@ export default function BookRidePage() {
           }
         )
       } else {
-        setLocationPermission(false)
         // Fallback if geolocation not supported
         const defaultLocation: Location = {
           lat: 40.7128,
@@ -183,12 +144,10 @@ export default function BookRidePage() {
     }
 
     getUserLocation()
-  }, [isClient])
+  }, [])
 
-  // Fetch available drivers - only runs on client side
+  // Fetch available drivers
   useEffect(() => {
-    if (!isClient) return
-
     const fetchAvailableDrivers = async () => {
       try {
         const supabase = createClient()
@@ -238,41 +197,17 @@ export default function BookRidePage() {
           }
         }))
 
-        // Filter drivers by distance if we have pickup location
-        let filteredDrivers = drivers
-        if (pickupLocation) {
-          // Add distance to each driver
-          const driversWithDistance = drivers.map(driver => {
-            const distance = driver.current_lat && driver.current_lng 
-              ? calculateDistance(
-                  pickupLocation.lat,
-                  pickupLocation.lng,
-                  driver.current_lat,
-                  driver.current_lng
-                )
-              : Infinity
-            
-            return { ...driver, distance }
-          })
-          
-          // Filter by search radius and sort by distance (closest first)
-          filteredDrivers = driversWithDistance
-            .filter(driver => driver.distance <= searchRadius)
-            .sort((a, b) => a.distance - b.distance)
-          
-          console.log(`Found ${filteredDrivers.length} drivers within ${searchRadius}km`)
-        }
+        console.log('Fetched drivers:', drivers.length)
+        setAvailableDrivers(drivers)
 
-        setAvailableDrivers(filteredDrivers)
-
-        // Filter drivers with valid coordinates for nearest driver calculation
-        const driversWithCoords = filteredDrivers.filter(
+        // Filter drivers with valid coordinates
+        const driversWithCoords = drivers.filter(
           driver => driver.current_lat !== null && driver.current_lng !== null
-        ) as Driver[]
+        )
 
         // If we have pickup location, find nearest driver
         if (pickupLocation && driversWithCoords.length > 0) {
-          const nearest = findNearestDriver(driversWithCoords, pickupLocation)
+          const nearest = findNearestDriver(driversWithCoords as Driver[], pickupLocation)
           setNearestDriver(nearest)
           setSelectedDriver(nearest)
         }
@@ -288,7 +223,7 @@ export default function BookRidePage() {
     const interval = setInterval(fetchAvailableDrivers, 30000)
 
     return () => clearInterval(interval)
-  }, [pickupLocation, searchRadius, isClient])
+  }, [pickupLocation])
 
   // Calculate fare and ETA when route changes
   useEffect(() => {
@@ -298,7 +233,7 @@ export default function BookRidePage() {
       setFareEstimate(fare)
       
       // Calculate ETA (route time + driver arrival time)
-      let driverArrivalTime = 10 // Default 10 minutes if no driver
+      let driverArrivalTime = 5 // Default 5 minutes if no driver
       if (selectedDriver && selectedDriver.current_lat && selectedDriver.current_lng) {
         driverArrivalTime = estimateArrivalTime(selectedDriver, pickupLocation)
       } else if (nearestDriver && nearestDriver.current_lat && nearestDriver.current_lng) {
@@ -390,55 +325,70 @@ export default function BookRidePage() {
   }
 
   // Handle ride booking
-  const handleBookRide = async () => {
-    if (!validateBooking() || !pickupLocation || !dropoffLocation || !selectedDriver || !routeInfo) {
-      return
-    }
-
-    setBooking(true)
-    setErrors([])
-
-    try {
-      const supabase = createClient()
-      
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      // Create ride request
-      const { data: ride, error } = await supabase
-        .from('rides')
-        .insert({
-          user_id: user.id,
-          driver_id: selectedDriver.user_id,
-          status: 'pending',
-          pickup_lat: pickupLocation.lat,
-          pickup_lng: pickupLocation.lng,
-          pickup_address: pickupAddress,
-          dropoff_lat: dropoffLocation.lat,
-          dropoff_lng: dropoffLocation.lng,
-          dropoff_address: dropoffAddress,
-          distance_km: routeInfo.distance,
-          estimated_duration_min: Math.ceil(routeInfo.duration),
-          fare: fareEstimate,
-          payment_method: paymentMethod,
-          payment_status: 'pending',
-          ride_type: rideType,
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      // Redirect to ride tracking page
-      router.push(`/ride/${ride.id}`)
-
-    } catch (error: any) {
-      setErrors([error.message || 'Failed to book ride'])
-    } finally {
-      setBooking(false)
-    }
+ // Handle ride booking
+const handleBookRide = async () => {
+  if (!validateBooking() || !pickupLocation || !dropoffLocation || !selectedDriver || !routeInfo || !fareEstimate) {
+    return
   }
+
+  setBooking(true)
+  setErrors([])
+
+  try {
+    const supabase = createClient()
+    
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      throw new Error('Not authenticated. Please log in.')
+    }
+
+    // Prepare ride data with correct types
+    const rideData = {
+      user_id: user.id,
+      driver_id: selectedDriver.user_id,
+      status: 'pending',
+      pickup_lat: Number(pickupLocation.lat), // Ensure it's numeric
+      pickup_lng: Number(pickupLocation.lng),
+      pickup_address: pickupAddress || null,
+      dropoff_lat: Number(dropoffLocation.lat),
+      dropoff_lng: Number(dropoffLocation.lng),
+      dropoff_address: dropoffAddress || null,
+      distance_km: Number(routeInfo.distance.toFixed(2)), // Ensure numeric
+      estimated_duration_min: Math.ceil(routeInfo.duration),
+      fare: Number(fareEstimate.toFixed(2)), // Ensure numeric
+      payment_method: paymentMethod === 'qr' ? 'qr_code' : paymentMethod, // Match enum
+      payment_status: 'pending',
+      ride_type: rideType,
+      created_at: new Date().toISOString(),
+    }
+
+    console.log('Booking ride with data:', rideData)
+
+    // Create ride request
+    const { data: ride, error } = await supabase
+      .from('rides')
+      .insert([rideData]) // Wrap in array
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Supabase error details:', error)
+      throw new Error(`Failed to book ride: ${error.message}`)
+    }
+
+    console.log('Ride booked successfully:', ride)
+
+    // Redirect to ride tracking page
+    router.push(`/ride/${ride.id}`)
+
+  } catch (error: any) {
+    console.error('Booking error:', error)
+    setErrors([error.message || 'Failed to book ride. Please try again.'])
+  } finally {
+    setBooking(false)
+  }
+}
 
   // Ride type options
   const rideTypes = [
@@ -452,14 +402,6 @@ export default function BookRidePage() {
     { id: 'card', name: 'Card', icon: CreditCard },
     { id: 'qr', name: 'QR Code', icon: CreditCard },
     { id: 'cash', name: 'Cash', icon: DollarSign },
-  ]
-
-  // Search radius options
-  const radiusOptions = [
-    { value: 5, label: '5 km' },
-    { value: 10, label: '10 km' },
-    { value: 15, label: '15 km' },
-    { value: 20, label: '20 km' },
   ]
 
   // Helper function to get driver initials
@@ -483,36 +425,7 @@ export default function BookRidePage() {
     return driver && driver.current_lat !== null && driver.current_lng !== null
   }
 
-  // Helper function to get driver distance
-  const getDriverDistance = (driver: Driver) => {
-    if (!driver.distance || !pickupLocation) return 'N/A'
-    return driver.distance.toFixed(1)
-  }
-
-  // Request location permission
-  const requestLocationPermission = () => {
-    if (typeof window !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const location = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            address: 'Current location'
-          }
-          setUserLocation(location)
-          setPickupLocation(location)
-          setPickupAddress('Current location')
-          setLocationPermission(true)
-        },
-        (error) => {
-          console.error('Location permission denied:', error)
-          setLocationPermission(false)
-        }
-      )
-    }
-  }
-
-  if (loading && !isClient) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
@@ -575,11 +488,6 @@ export default function BookRidePage() {
                       <MapPin className="h-3 w-3 text-white" />
                     </div>
                     <Label htmlFor="pickup">Pickup Location</Label>
-                    {!locationPermission && (
-                      <Badge variant="outline" className="ml-2 text-xs">
-                        Location disabled
-                      </Badge>
-                    )}
                   </div>
                   <div className="flex gap-2">
                     <Input
@@ -612,8 +520,6 @@ export default function BookRidePage() {
                         if (userLocation) {
                           setPickupLocation(userLocation)
                           setPickupAddress(userLocation.address || 'Current location')
-                        } else {
-                          requestLocationPermission()
                         }
                       }}
                       title="Use current location"
@@ -658,53 +564,16 @@ export default function BookRidePage() {
                 </div>
 
                 {/* Interactive Map */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label>Map View</Label>
-                    <div className="flex items-center gap-2">
-                      <Compass className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Search radius:</span>
-                      <div className="flex gap-1">
-                        {radiusOptions.map((option) => (
-                          <Button
-                            key={option.value}
-                            type="button"
-                            variant={searchRadius === option.value ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setSearchRadius(option.value)}
-                            className="h-8 px-3 text-xs"
-                          >
-                            {option.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-lg overflow-hidden border h-[400px] relative">
-                    <UnifiedMap
-                      variant="booking"
-                      pickupLocation={pickupLocation || undefined}
-                      dropoffLocation={dropoffLocation || undefined}
-                      onRouteCalculated={handleRouteCalculated}
-                      showAvailableDrivers={true}
-                      onDriverSelected={handleDriverSelect}
-                      className="h-full"
-                    />
-                    {!locationPermission && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-10">
-                        <div className="text-center p-6 bg-white rounded-lg shadow-lg max-w-sm mx-4">
-                          <Navigation className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                          <h3 className="font-semibold mb-2">Location Required</h3>
-                          <p className="text-muted-foreground mb-4">
-                            Enable location services to see drivers on the map and calculate distances.
-                          </p>
-                          <Button onClick={requestLocationPermission}>
-                            Enable Location
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                <div className="rounded-lg overflow-hidden border h-[400px]">
+                  <UnifiedMap
+                    variant="booking"
+                    pickupLocation={pickupLocation || undefined}
+                    dropoffLocation={dropoffLocation || undefined}
+                    onRouteCalculated={handleRouteCalculated}
+                    showAvailableDrivers={true}
+                    onDriverSelected={handleDriverSelect}
+                    className="h-full"
+                  />
                 </div>
 
                 {/* Driver Selection */}
@@ -713,9 +582,7 @@ export default function BookRidePage() {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className="font-semibold">Available Drivers ({availableDrivers.length})</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Showing drivers within {searchRadius}km • Click on map or select below
-                        </p>
+                        <p className="text-sm text-muted-foreground">Click on map or select below</p>
                       </div>
                       <Button
                         variant="ghost"
@@ -753,16 +620,11 @@ export default function BookRidePage() {
                                     <span className="text-xs">{getDriverRating(driver)}</span>
                                   </div>
                                 </div>
-                                <div className="flex items-center justify-between mt-1">
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {driver.vehicle_make} {driver.vehicle_model} • {driver.vehicle_color}
-                                  </p>
-                                  <Badge variant="outline" className="text-xs">
-                                    {getDriverDistance(driver)} km
-                                  </Badge>
-                                </div>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {driver.vehicle_make} {driver.vehicle_model} • {driver.vehicle_color}
+                                </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {getDriverRideCount(driver)} rides • ETA: {estimateArrivalTime(driver, pickupLocation!)} min
+                                  {getDriverRideCount(driver)} rides
                                 </p>
                               </div>
                               {selectedDriver?.user_id === driver.user_id && (
@@ -790,10 +652,6 @@ export default function BookRidePage() {
                                 <span className="text-sm text-muted-foreground">
                                   {getDriverRideCount(selectedDriver)} rides
                                 </span>
-                                <span className="text-sm text-muted-foreground">•</span>
-                                <Badge variant="secondary" className="text-xs">
-                                  {getDriverDistance(selectedDriver)} km away
-                                </Badge>
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 {selectedDriver.vehicle_make} {selectedDriver.vehicle_model} • {selectedDriver.vehicle_color}
@@ -917,14 +775,9 @@ export default function BookRidePage() {
                                 ({getDriverRideCount(selectedDriver)} rides)
                               </span>
                             </div>
-                            <div className="flex items-center justify-between mt-1">
-                              <p className="text-sm text-muted-foreground truncate">
-                                {selectedDriver.vehicle_make} {selectedDriver.vehicle_model}
-                              </p>
-                              <Badge variant="outline" className="text-xs">
-                                {getDriverDistance(selectedDriver)} km away
-                              </Badge>
-                            </div>
+                            <p className="text-sm text-muted-foreground truncate">
+                              {selectedDriver.vehicle_make} {selectedDriver.vehicle_model}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -939,10 +792,7 @@ export default function BookRidePage() {
 
                     {/* Available Drivers Count */}
                     <div className="flex items-center justify-between text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Available Drivers</span>
-                        <p className="text-xs text-muted-foreground">Within {searchRadius}km radius</p>
-                      </div>
+                      <span className="text-muted-foreground">Available Drivers</span>
                       <Badge variant={availableDrivers.length > 0 ? "default" : "secondary"}>
                         {availableDrivers.length}
                       </Badge>
@@ -952,22 +802,8 @@ export default function BookRidePage() {
                       <div className="p-3 rounded-lg bg-muted">
                         <div className="text-center">
                           <Car className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                          <p className="text-sm text-muted-foreground">No drivers available within {searchRadius}km</p>
-                          <p className="text-xs text-muted-foreground">Try increasing search radius or adjusting location</p>
-                          <div className="flex gap-2 justify-center mt-2">
-                            {radiusOptions.map((option) => (
-                              <Button
-                                key={option.value}
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setSearchRadius(option.value)}
-                                className="h-8 px-3 text-xs"
-                              >
-                                {option.label}
-                              </Button>
-                            ))}
-                          </div>
+                          <p className="text-sm text-muted-foreground">No drivers available</p>
+                          <p className="text-xs text-muted-foreground">Try again in a few minutes</p>
                         </div>
                       </div>
                     )}
@@ -1070,17 +906,10 @@ export default function BookRidePage() {
                 Please select a driver to continue
               </p>
             )}
-            {availableDrivers.length === 0 && pickupLocation && dropoffLocation && (
-              <div className="text-center text-sm text-muted-foreground">
-                <p>No drivers available within {searchRadius}km.</p>
-                <Button
-                  variant="link"
-                  className="mt-2"
-                  onClick={() => setSearchRadius(searchRadius + 5)}
-                >
-                  Increase search radius
-                </Button>
-              </div>
+            {availableDrivers.length === 0 && (
+              <p className="text-center text-sm text-muted-foreground">
+                No drivers available. Please try again later.
+              </p>
             )}
           </div>
         </div>
