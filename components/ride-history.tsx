@@ -118,32 +118,31 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
       const supabase = createClient()
       
       // Build query based on role
-      let query = supabase
-        .from("rides")
-        .select(`
-          *,
-          user:profiles!rides_user_id_fkey (
-            full_name,
-            email,
-            phone,
-            rating
-          ),
-          driver:profiles!rides_driver_id_fkey (
-            full_name,
-            email,
-            phone,
-            rating,
-            vehicle_make,
-            vehicle_model,
-            vehicle_plate
-          ),
-          ratings!left (
-            rating,
-            comment,
-            created_at
-          )
-        `)
-        .order("created_at", { ascending: false })
+      // In your loadRides function, update the query to:
+let query = supabase
+  .from("rides")
+  .select(`
+    *,
+    user:profiles!rides_user_id_fkey (
+      full_name,
+      email,
+      phone,
+      rating
+    ),
+    driver:profiles!rides_driver_id_fkey (
+      full_name,
+      email,
+      phone,
+      rating
+      -- Remove vehicle_make, vehicle_model, vehicle_plate
+    ),
+    ratings!left (
+      rating,
+      comment,
+      created_at
+    )
+  `)
+  .order("created_at", { ascending: false })
 
       // Filter based on role
       if (role === "user") {
