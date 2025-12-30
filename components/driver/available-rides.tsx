@@ -8,13 +8,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { MapPin, Clock, DollarSign, Navigation, Loader2 } from "lucide-react"
+import { MapPin, Clock, DollarSign, Navigation, Loader2, Car, AlertCircle, Compass } from "lucide-react"
 import type { LatLng, Ride } from "@/lib/types"
+import { calculateDistance, estimateArrivalTime, findNearestDriver } from "@/lib/ride/calculations"
 
 interface AvailableRidesProps {
   driverId: string
   driverDetailsId: string
 }
+
+// Maximum distance for showing rides (in kilometers)
+const MAX_DISTANCE_KM = 15
 
 export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProps) {
   const [isOnline, setIsOnline] = useState(false)
@@ -24,9 +28,16 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
   const [isAccepting, setIsAccepting] = useState(false)
   const [driverLocation, setDriverLocation] = useState<LatLng | null>(null)
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number }>({ distance: 0, duration: 0 })
+  const [isLoadingRides, setIsLoadingRides] = useState(false)
+  const [locationPermission, setLocationPermission] = useState<PermissionState | null>(null)
+  const [showDistanceFilter, setShowDistanceFilter] = useState(true)
 
   useEffect(() => {
     loadDriverStatus()
+    checkLocationPermission()
+  }, [])
+
+  useEffect(() => {
     if (isOnline) {
       loadAvailableRides()
       const interval = setInterval(loadAvailableRides, 10000) // Refresh every 10 seconds
@@ -51,14 +62,36 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
           }
           setDriverLocation(location)
           await updateDriverLocation(location)
+          
+          // Reload rides when location changes significantly
+          loadAvailableRides()
         },
-        (error) => console.error("Geolocation error:", error),
-        { enableHighAccuracy: true }
+        (error) => {
+          console.error("Geolocation error:", error)
+          if (error.code === 1) {
+            setLocationPermission('denied')
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
       )
 
       return () => navigator.geolocation.clearWatch(watchId)
     }
   }, [isOnline])
+
+  const checkLocationPermission = async () => {
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const result = await navigator.permissions.query({ name: 'geolocation' as PermissionName })
+        setLocationPermission(result.state)
+        result.onchange = () => {
+          setLocationPermission(result.state)
+        }
+      } catch (error) {
+        console.error("Error checking location permission:", error)
+      }
+    }
+  }
 
   const loadDriverStatus = async () => {
     try {
@@ -74,46 +107,68 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
   }
 
   const loadAvailableRides = async () => {
-  try {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from("rides")
-      .select("*")
-      .eq("status", "pending")
-      .order("created_at", { ascending: true })
+    if (!isOnline) return
+    
+    setIsLoadingRides(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from("rides")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
 
-    if (!data) {
-      setRides([])
-      return
-    }
+      if (error) throw error
 
-    // Filter rides by distance if driver location is available
-    let filteredRides = data
-    if (driverLocation) {
-      // Calculate distance for each ride
-      const ridesWithDistance = data.map(ride => {
-        const distance = calculateDistance(
-          driverLocation.lat,
-          driverLocation.lng,
-          ride.pickup_lat,
-          ride.pickup_lng
-        )
-        return { ...ride, distance }
-      })
+      let filteredRides = data || []
       
-      // Filter by max distance (e.g., 15km) and sort by distance
-      filteredRides = ridesWithDistance
-        .filter(ride => ride.distance <= 15) // 15km radius
-        .sort((a, b) => a.distance - b.distance) // Closest first
-      
-      console.log(`Found ${filteredRides.length} rides within 15km`)
-    }
+      // Filter by distance if driver location is available
+      if (driverLocation && showDistanceFilter) {
+        // Calculate distance for each ride and add it as a property
+        const ridesWithDistance = filteredRides.map(ride => {
+          const distance = calculateDistance(
+            driverLocation.lat,
+            driverLocation.lng,
+            ride.pickup_lat,
+            ride.pickup_lng
+          )
+          return { ...ride, distance }
+        })
+        
+        // Filter by max distance and sort by distance (closest first)
+        filteredRides = ridesWithDistance
+          .filter(ride => ride.distance <= MAX_DISTANCE_KM)
+          .sort((a, b) => a.distance - b.distance)
+        
+        console.log(`Found ${filteredRides.length} rides within ${MAX_DISTANCE_KM}km`)
+      } else if (driverLocation) {
+        // Just sort by distance if not filtering
+        const ridesWithDistance = filteredRides.map(ride => {
+          const distance = calculateDistance(
+            driverLocation.lat,
+            driverLocation.lng,
+            ride.pickup_lat,
+            ride.pickup_lng
+          )
+          return { ...ride, distance }
+        })
+        filteredRides = ridesWithDistance.sort((a, b) => a.distance - b.distance)
+      }
 
-    setRides(filteredRides)
-  } catch (error) {
-    console.error("Error loading available rides:", error)
+      setRides(filteredRides)
+      
+      // Auto-select the closest ride if none selected
+      if (!selectedRide && filteredRides.length > 0) {
+        setSelectedRide(filteredRides[0])
+      }
+
+    } catch (error) {
+      console.error("Error loading available rides:", error)
+    } finally {
+      setIsLoadingRides(false)
+    }
   }
-}
+
   const updateDriverLocation = async (location: LatLng) => {
     try {
       const supabase = createClient()
@@ -150,8 +205,15 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
               }
               setDriverLocation(location)
               updateDriverLocation(location)
+              loadAvailableRides()
             },
-            (error) => console.error("Geolocation error:", error)
+            (error) => {
+              console.error("Geolocation error:", error)
+              if (error.code === 1) {
+                setLocationPermission('denied')
+                alert('Location permission is required to see nearby rides. Please enable location services.')
+              }
+            }
           )
         }
       }
@@ -194,6 +256,30 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
     }
   }
 
+  const getDistanceToRide = (ride: Ride) => {
+    if (!driverLocation) return null
+    
+    const distance = calculateDistance(
+      driverLocation.lat,
+      driverLocation.lng,
+      ride.pickup_lat,
+      ride.pickup_lng
+    )
+    
+    return distance.toFixed(1)
+  }
+
+  const getEstimatedArrivalTime = (ride: Ride) => {
+    if (!driverLocation) return null
+    
+    const distance = parseFloat(getDistanceToRide(ride) || '0')
+    // Estimate arrival time (assuming average speed of 30 km/h in city)
+    const timeHours = distance / 30
+    const timeMinutes = timeHours * 60
+    
+    return Math.ceil(timeMinutes + 5) // Add 5 minutes buffer
+  }
+
   const markers = [
     ...(selectedRide
       ? [
@@ -218,11 +304,16 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
       <Card>
         <CardContent className="flex items-center justify-between py-4">
           <div className="flex items-center gap-3">
-            <div className={`h-3 w-3 rounded-full ${isOnline ? "bg-green-500" : "bg-gray-400"}`} />
+            <div className={`h-3 w-3 rounded-full ${isOnline ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
             <div>
-              <p className="font-medium">{isOnline ? "Online" : "Offline"}</p>
+              <p className="font-medium">{isOnline ? "Online - Receiving Rides" : "Offline"}</p>
               <p className="text-sm text-muted-foreground">
-                {isOnline ? "Receiving ride requests" : "Go online to receive rides"}
+                {isOnline 
+                  ? driverLocation 
+                    ? `Showing rides within ${MAX_DISTANCE_KM}km` 
+                    : "Waiting for location..."
+                  : "Go online to receive rides"
+                }
               </p>
             </div>
           </div>
@@ -230,96 +321,234 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
             <Label htmlFor="online-toggle" className="sr-only">
               Online status
             </Label>
-            <Switch id="online-toggle" checked={isOnline} onCheckedChange={toggleOnlineStatus} />
+            <Switch 
+              id="online-toggle" 
+              checked={isOnline} 
+              onCheckedChange={toggleOnlineStatus}
+              disabled={isOnline && locationPermission === 'denied'}
+            />
           </div>
         </CardContent>
+        
+        {isOnline && locationPermission === 'denied' && (
+          <div className="px-4 pb-4">
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
+              <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-yellow-800">
+                <p className="font-medium">Location permission required</p>
+                <p>Please enable location services to see rides near you. Without location, you won&apos;t see nearby rides.</p>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
 
       {isOnline && (
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Available Rides List */}
           <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Available Rides ({rides.length})</h2>
-            {rides.length === 0 ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Available Rides</h2>
+                <p className="text-sm text-muted-foreground">
+                  {driverLocation 
+                    ? `${rides.length} rides within ${MAX_DISTANCE_KM}km` 
+                    : `${rides.length} total rides`
+                  }
+                </p>
+              </div>
+              
+              {driverLocation && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Filter by distance</span>
+                  <Switch 
+                    checked={showDistanceFilter} 
+                    onCheckedChange={setShowDistanceFilter}
+                    size="sm"
+                  />
+                </div>
+              )}
+            </div>
+            
+            {isLoadingRides ? (
               <Card>
                 <CardContent className="py-12 text-center">
-                  <Navigation className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <p className="mt-4 text-muted-foreground">No rides available right now</p>
-                  <p className="text-sm text-muted-foreground">New ride requests will appear here</p>
+                  <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
+                  <p className="mt-4 text-muted-foreground">Looking for nearby rides...</p>
+                </CardContent>
+              </Card>
+            ) : rides.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Car className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <h3 className="mt-4 text-lg font-semibold">
+                    {driverLocation 
+                      ? `No rides within ${MAX_DISTANCE_KM}km` 
+                      : "No rides available"
+                    }
+                  </h3>
+                  <p className="text-muted-foreground">
+                    {driverLocation 
+                      ? "Check back in a few minutes or try a different location"
+                      : "Turn on location to see rides near you"
+                    }
+                  </p>
+                  {!driverLocation && isOnline && (
+                    <Button 
+                      variant="outline" 
+                      className="mt-4"
+                      onClick={() => {
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                              const location = {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude,
+                              }
+                              setDriverLocation(location)
+                              updateDriverLocation(location)
+                            },
+                            (error) => console.error("Geolocation error:", error)
+                          )
+                        }
+                      }}
+                    >
+                      <Navigation className="mr-2 h-4 w-4" />
+                      Enable Location
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ) : (
-              rides.map((ride) => (
-                <Card
-                  key={ride.id}
-                  className={`cursor-pointer transition-all hover:shadow-md ${
-                    selectedRide?.id === ride.id ? "ring-2 ring-primary" : ""
-                  }`}
-                  onClick={() => setSelectedRide(ride)}
-                >
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline">
-                        <Clock className="mr-1 h-3 w-3" />
-                        {new Date(ride.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </Badge>
-                      <div className="flex items-center gap-1 text-lg font-bold">
-                        <DollarSign className="h-4 w-4" />
-                        {ride.fare?.toFixed(2) || "0.00"}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-start gap-2">
-                      <MapPin className="mt-0.5 h-4 w-4 text-green-500" />
-                      <p className="text-sm">
-                        {ride.pickup_address || `${ride.pickup_lat.toFixed(4)}, ${ride.pickup_lng.toFixed(4)}`}
-                      </p>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <MapPin className="mt-0.5 h-4 w-4 text-red-500" />
-                      <p className="text-sm">
-                        {ride.dropoff_address || `${ride.dropoff_lat.toFixed(4)}, ${ride.dropoff_lng.toFixed(4)}`}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span>{ride.distance_km?.toFixed(1) || "N/A"} km</span>
-                      <span>{ride.estimated_duration_min || "N/A"} min</span>
-                    </div>
-                    {selectedRide?.id === ride.id && driverLocation && (
-                      <div className="rounded bg-blue-50 p-3 text-sm">
-                        <div className="flex justify-between">
-                          <span>Distance to pickup:</span>
-                          <span className="font-medium">{routeInfo.distance.toFixed(1)} km</span>
+              rides.map((ride) => {
+                const distance = getDistanceToRide(ride)
+                const arrivalTime = getEstimatedArrivalTime(ride)
+                
+                return (
+                  <Card
+                    key={ride.id}
+                    className={`cursor-pointer transition-all hover:shadow-md ${
+                      selectedRide?.id === ride.id ? "ring-2 ring-primary" : ""
+                    }`}
+                    onClick={() => setSelectedRide(ride)}
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(ride.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </Badge>
+                          {distance && (
+                            <Badge variant="secondary" className="gap-1">
+                              <Compass className="h-3 w-3" />
+                              {distance} km
+                            </Badge>
+                          )}
                         </div>
-                        <div className="flex justify-between">
-                          <span>Time to pickup:</span>
-                          <span className="font-medium">{Math.round(routeInfo.duration)} min</span>
+                        <div className="flex items-center gap-1 text-lg font-bold">
+                          <DollarSign className="h-4 w-4" />
+                          {ride.fare?.toFixed(2) || "0.00"}
                         </div>
                       </div>
-                    )}
-                    <Button className="w-full" onClick={() => handleAcceptRide(ride)} disabled={isAccepting}>
-                      {isAccepting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Accepting...
-                        </>
-                      ) : (
-                        "Accept Ride"
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-start gap-2">
+                        <MapPin className="mt-0.5 h-4 w-4 text-green-500" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Pickup</p>
+                          <p className="text-sm text-muted-foreground">
+                            {ride.pickup_address || `${ride.pickup_lat.toFixed(4)}, ${ride.pickup_lng.toFixed(4)}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <MapPin className="mt-0.5 h-4 w-4 text-red-500" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Dropoff</p>
+                          <p className="text-sm text-muted-foreground">
+                            {ride.dropoff_address || `${ride.dropoff_lat.toFixed(4)}, ${ride.dropoff_lng.toFixed(4)}`}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        <div className="text-center p-2 bg-muted rounded">
+                          <p className="text-muted-foreground">Ride Distance</p>
+                          <p className="font-semibold">{ride.distance_km?.toFixed(1) || "N/A"} km</p>
+                        </div>
+                        <div className="text-center p-2 bg-muted rounded">
+                          <p className="text-muted-foreground">Duration</p>
+                          <p className="font-semibold">{ride.estimated_duration_min || "N/A"} min</p>
+                        </div>
+                        <div className="text-center p-2 bg-muted rounded">
+                          <p className="text-muted-foreground">You Arrive In</p>
+                          <p className="font-semibold">{arrivalTime || "N/A"} min</p>
+                        </div>
+                      </div>
+
+                      {selectedRide?.id === ride.id && driverLocation && (
+                        <div className="rounded-lg bg-blue-50 p-4 border border-blue-200">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-medium text-blue-900">Route to pickup:</span>
+                            <Badge variant="outline" className="bg-white">
+                              {routeInfo.distance.toFixed(1)} km • {Math.round(routeInfo.duration)} min
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between text-sm text-blue-700">
+                            <span>Your location to pickup</span>
+                            <span>{distance} km • ~{arrivalTime} min</span>
+                          </div>
+                        </div>
                       )}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))
+                      
+                      <Button 
+                        className="w-full" 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleAcceptRide(ride)
+                        }} 
+                        disabled={isAccepting}
+                        size="lg"
+                      >
+                        {isAccepting ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Accepting...
+                          </>
+                        ) : (
+                          <>
+                            <Car className="mr-2 h-4 w-4" />
+                            Accept Ride • ${ride.fare?.toFixed(2) || "0.00"}
+                          </>
+                        )}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )
+              })
             )}
           </div>
 
           {/* Map */}
           <Card className="overflow-hidden">
             <CardHeader>
-              <CardTitle>
-                {selectedRide ? `Ride to ${selectedRide.dropoff_address?.split(",")[0] || "Destination"}` : "Map View"}
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>
+                  {selectedRide 
+                    ? `Ride to ${selectedRide.dropoff_address?.split(",")[0] || "Destination"}` 
+                    : driverLocation 
+                      ? "Nearby Rides Map"
+                      : "Map View"
+                  }
+                </CardTitle>
+                {driverLocation && (
+                  <Badge variant="outline" className="gap-1">
+                    <Navigation className="h-3 w-3" />
+                    You are here
+                  </Badge>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="h-[500px] p-0">
               <DriverMap
@@ -330,7 +559,7 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
                 }
                 markers={markers}
                 route={route}
-                showUserLocation={false}
+                showUserLocation={!!driverLocation}
                 interactive
                 onRouteCalculated={(routeData) => {
                   if (routeData && selectedRide) {
@@ -341,6 +570,37 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
                   }
                 }}
               />
+              
+              {!driverLocation && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-10">
+                  <div className="text-center p-6 bg-white rounded-lg shadow-lg max-w-sm mx-4">
+                    <Navigation className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="font-semibold mb-2">Location Required</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Enable location services to see rides on the map and calculate distances.
+                    </p>
+                    <Button
+                      onClick={() => {
+                        if (navigator.geolocation) {
+                          navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                              const location = {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude,
+                              }
+                              setDriverLocation(location)
+                              updateDriverLocation(location)
+                            },
+                            (error) => console.error("Geolocation error:", error)
+                          )
+                        }
+                      }}
+                    >
+                      Enable Location
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
