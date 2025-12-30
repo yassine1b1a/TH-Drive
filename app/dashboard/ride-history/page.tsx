@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { RideHistory } from "@/components/ride-history"
+import RideHistory from "@/components/ride-history"
 import { UserSidebar } from "@/components/dashboard/user-sidebar"
 
 export default function UserRideHistoryPage() {
