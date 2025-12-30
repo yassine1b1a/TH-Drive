@@ -166,7 +166,7 @@ export default function RateRidePage() {
       
       // Redirect to ride history after 2 seconds
       setTimeout(() => {
-        router.push('/ride-history')
+        router.push('/dashboard/ride-history')
       }, 2000)
       
     } catch (error) {
@@ -200,7 +200,7 @@ export default function RateRidePage() {
             <CardDescription>{error}</CardDescription>
           </CardHeader>
           <CardFooter>
-            <Button onClick={() => router.push('/ride-history')} className="w-full">
+            <Button onClick={() => router.push('/dashboard/ride-history')} className="w-full">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Ride History
             </Button>
@@ -222,7 +222,7 @@ export default function RateRidePage() {
             <CardDescription>You have already rated this ride.</CardDescription>
           </CardHeader>
           <CardFooter>
-            <Button onClick={() => router.push('/ride-history')} className="w-full">
+            <Button onClick={() => router.push('/dashboard/ride-history')} className="w-full">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Ride History
             </Button>
@@ -237,7 +237,7 @@ export default function RateRidePage() {
       <div className="max-w-md mx-auto">
         <Button
           variant="ghost"
-          onClick={() => router.push('/ride-history')}
+          onClick={() => router.push('/dashboard/ride-history')}
           className="mb-6"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -393,7 +393,7 @@ export default function RateRidePage() {
             
             <Button
               variant="outline"
-              onClick={() => router.push('/ride-history')}
+              onClick={() => router.push('/dashboard/ride-history')}
               className="w-full"
             >
               Skip Rating
