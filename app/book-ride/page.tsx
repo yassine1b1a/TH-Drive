@@ -31,7 +31,17 @@ import {
   Compass
 } from 'lucide-react'
 import { calculateFare, estimateArrivalTime, findNearestDriver } from '@/lib/ride/calculations'
-import UnifiedMap from '@/components/map/UnifiedMap'
+import dynamic from 'next/dynamic'
+
+// Dynamically import the map component with SSR disabled
+const UnifiedMap = dynamic(() => import('@/components/map/UnifiedMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full w-full flex items-center justify-center bg-gray-100">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  )
+})
 
 interface Location {
   lat: number
@@ -102,11 +112,19 @@ export default function BookRidePage() {
   const [showDriverList, setShowDriverList] = useState(false)
   const [searchRadius, setSearchRadius] = useState<number>(10) // Default 10km radius
   const [locationPermission, setLocationPermission] = useState<boolean>(true)
+  const [isClient, setIsClient] = useState(false)
 
-  // Get user's current location
+  // Check if we're on the client side
   useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  // Get user's current location - only runs on client side
+  useEffect(() => {
+    if (!isClient) return
+
     const getUserLocation = () => {
-      if (navigator.geolocation) {
+      if (typeof window !== 'undefined' && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
             const { latitude, longitude } = position.coords
@@ -165,10 +183,12 @@ export default function BookRidePage() {
     }
 
     getUserLocation()
-  }, [])
+  }, [isClient])
 
-  // Fetch available drivers
+  // Fetch available drivers - only runs on client side
   useEffect(() => {
+    if (!isClient) return
+
     const fetchAvailableDrivers = async () => {
       try {
         const supabase = createClient()
@@ -268,7 +288,7 @@ export default function BookRidePage() {
     const interval = setInterval(fetchAvailableDrivers, 30000)
 
     return () => clearInterval(interval)
-  }, [pickupLocation, searchRadius])
+  }, [pickupLocation, searchRadius, isClient])
 
   // Calculate fare and ETA when route changes
   useEffect(() => {
@@ -471,7 +491,7 @@ export default function BookRidePage() {
 
   // Request location permission
   const requestLocationPermission = () => {
-    if (navigator.geolocation) {
+    if (typeof window !== 'undefined' && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const location = {
@@ -492,7 +512,7 @@ export default function BookRidePage() {
     }
   }
 
-  if (loading) {
+  if (loading && !isClient) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
