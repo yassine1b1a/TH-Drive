@@ -74,22 +74,46 @@ export function AvailableRides({ driverId, driverDetailsId }: AvailableRidesProp
   }
 
   const loadAvailableRides = async () => {
-    try {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("rides")
-        .select("*")
-        .eq("status", "pending")
-        .order("created_at", { ascending: true })
+  try {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from("rides")
+      .select("*")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
 
-      if (data) {
-        setRides(data)
-      }
-    } catch (error) {
-      console.error("Error loading available rides:", error)
+    if (!data) {
+      setRides([])
+      return
     }
-  }
 
+    // Filter rides by distance if driver location is available
+    let filteredRides = data
+    if (driverLocation) {
+      // Calculate distance for each ride
+      const ridesWithDistance = data.map(ride => {
+        const distance = calculateDistance(
+          driverLocation.lat,
+          driverLocation.lng,
+          ride.pickup_lat,
+          ride.pickup_lng
+        )
+        return { ...ride, distance }
+      })
+      
+      // Filter by max distance (e.g., 15km) and sort by distance
+      filteredRides = ridesWithDistance
+        .filter(ride => ride.distance <= 15) // 15km radius
+        .sort((a, b) => a.distance - b.distance) // Closest first
+      
+      console.log(`Found ${filteredRides.length} rides within 15km`)
+    }
+
+    setRides(filteredRides)
+  } catch (error) {
+    console.error("Error loading available rides:", error)
+  }
+}
   const updateDriverLocation = async (location: LatLng) => {
     try {
       const supabase = createClient()
