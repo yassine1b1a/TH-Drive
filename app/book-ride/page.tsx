@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
   Loader2, 
   MapPin, 
@@ -28,20 +27,11 @@ import {
   Calendar,
   CreditCard,
   User,
-  Sparkles
+  Sparkles,
+  Compass
 } from 'lucide-react'
-import dynamic from 'next/dynamic'
 import { calculateFare, estimateArrivalTime, findNearestDriver } from '@/lib/ride/calculations'
-
-// Dynamically import map to avoid SSR issues
-const OpenStreetMap = dynamic(() => import('@/components/map/OpenStreetMap'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full min-h-[500px] flex items-center justify-center bg-gray-100 rounded-lg">
-      <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-    </div>
-  )
-})
+import UnifiedMap from '@/components/map/UnifiedMap'
 
 interface Location {
   lat: number
@@ -66,12 +56,27 @@ interface Driver {
   vehicle_plate: string
   is_online: boolean
   is_verified: boolean
+  distance?: number
   profiles: {
     full_name: string | null
     rating: number | null
     total_rides: number | null
     avatar_url?: string | null
   }
+}
+
+// Haversine formula to calculate distance between two points in kilometers
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371 // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * (Math.PI / 180)
+  const dLon = (lon2 - lon1) * (Math.PI / 180)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+    Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
 }
 
 export default function BookRidePage() {
@@ -95,6 +100,8 @@ export default function BookRidePage() {
   const [searchingPickup, setSearchingPickup] = useState(false)
   const [searchingDropoff, setSearchingDropoff] = useState(false)
   const [showDriverList, setShowDriverList] = useState(false)
+  const [searchRadius, setSearchRadius] = useState<number>(10) // Default 10km radius
+  const [locationPermission, setLocationPermission] = useState<boolean>(true)
 
   // Get user's current location
   useEffect(() => {
@@ -120,15 +127,18 @@ export default function BookRidePage() {
               setUserLocation(location)
               setPickupLocation(location)
               setPickupAddress(data.display_name || 'Current location')
+              setLocationPermission(true)
             } catch (error) {
               // If address lookup fails, still set coordinates
               const location: Location = { lat: latitude, lng: longitude }
               setUserLocation(location)
               setPickupLocation(location)
+              setLocationPermission(true)
             }
           },
           (error) => {
             console.error('Error getting location:', error)
+            setLocationPermission(false)
             // Default to a central location if geolocation fails
             const defaultLocation: Location = {
               lat: 40.7128,
@@ -141,6 +151,7 @@ export default function BookRidePage() {
           }
         )
       } else {
+        setLocationPermission(false)
         // Fallback if geolocation not supported
         const defaultLocation: Location = {
           lat: 40.7128,
@@ -157,103 +168,107 @@ export default function BookRidePage() {
   }, [])
 
   // Fetch available drivers
-  // Update the useEffect that fetches drivers
-useEffect(() => {
-  const fetchAvailableDrivers = async () => {
-    try {
-      const supabase = createClient()
-      
-      // Get ALL online drivers first
-      const { data: driversData, error } = await supabase
-        .from('driver_details')
-        .select(`
-          user_id,
-          current_lat,
-          current_lng,
-          vehicle_make,
-          vehicle_model,
-          vehicle_color,
-          vehicle_plate,
-          is_online,
-          is_verified,
-          profiles!inner (
-            full_name,
-            rating,
-            total_rides,
-            avatar_url
-          )
-        `)
-        .eq('is_online', true)
-        .eq('is_verified', true)
-        .not('current_lat', 'is', null)
-        .not('current_lng', 'is', null)
-
-      if (error) throw error
-
-      // Transform the data
-      const drivers: Driver[] = (driversData || []).map((driver: any) => ({
-        user_id: driver.user_id,
-        current_lat: driver.current_lat,
-        current_lng: driver.current_lng,
-        vehicle_make: driver.vehicle_make || '',
-        vehicle_model: driver.vehicle_model || '',
-        vehicle_color: driver.vehicle_color || '',
-        vehicle_plate: driver.vehicle_plate || '',
-        is_online: driver.is_online || false,
-        is_verified: driver.is_verified || false,
-        profiles: driver.profiles || {
-          full_name: null,
-          rating: null,
-          total_rides: null,
-          avatar_url: null
-        }
-      }))
-
-      // Filter and sort by distance if we have pickup location
-      let filteredDrivers = drivers
-      if (pickupLocation) {
-        // Add distance to each driver
-        const driversWithDistance = drivers.map(driver => {
-          const distance = driver.current_lat && driver.current_lng 
-            ? calculateDistance(
-                pickupLocation.lat,
-                pickupLocation.lng,
-                driver.current_lat,
-                driver.current_lng
-              )
-            : Infinity
-          
-          return { ...driver, distance }
-        })
+  useEffect(() => {
+    const fetchAvailableDrivers = async () => {
+      try {
+        const supabase = createClient()
         
-        // Filter by max distance (e.g., 10km)
-        filteredDrivers = driversWithDistance
-          .filter(driver => driver.distance <= 10)
-          .sort((a, b) => a.distance - b.distance) // Closest first
+        const { data: driversData, error } = await supabase
+          .from('driver_details')
+          .select(`
+            user_id,
+            current_lat,
+            current_lng,
+            vehicle_make,
+            vehicle_model,
+            vehicle_color,
+            vehicle_plate,
+            is_online,
+            is_verified,
+            profiles!inner (
+              full_name,
+              rating,
+              total_rides,
+              avatar_url
+            )
+          `)
+          .eq('is_online', true)
+          .eq('is_verified', true)
+          .not('current_lat', 'is', null)
+          .not('current_lng', 'is', null)
+
+        if (error) throw error
+
+        // Transform the data to match our interface
+        const drivers: Driver[] = (driversData || []).map((driver: any) => ({
+          user_id: driver.user_id,
+          current_lat: driver.current_lat,
+          current_lng: driver.current_lng,
+          vehicle_make: driver.vehicle_make || '',
+          vehicle_model: driver.vehicle_model || '',
+          vehicle_color: driver.vehicle_color || '',
+          vehicle_plate: driver.vehicle_plate || '',
+          is_online: driver.is_online || false,
+          is_verified: driver.is_verified || false,
+          profiles: (Array.isArray(driver.profiles) ? driver.profiles[0] : driver.profiles) || {
+            full_name: null,
+            rating: null,
+            total_rides: null,
+            avatar_url: null
+          }
+        }))
+
+        // Filter drivers by distance if we have pickup location
+        let filteredDrivers = drivers
+        if (pickupLocation) {
+          // Add distance to each driver
+          const driversWithDistance = drivers.map(driver => {
+            const distance = driver.current_lat && driver.current_lng 
+              ? calculateDistance(
+                  pickupLocation.lat,
+                  pickupLocation.lng,
+                  driver.current_lat,
+                  driver.current_lng
+                )
+              : Infinity
+            
+            return { ...driver, distance }
+          })
+          
+          // Filter by search radius and sort by distance (closest first)
+          filteredDrivers = driversWithDistance
+            .filter(driver => driver.distance <= searchRadius)
+            .sort((a, b) => a.distance - b.distance)
+          
+          console.log(`Found ${filteredDrivers.length} drivers within ${searchRadius}km`)
+        }
+
+        setAvailableDrivers(filteredDrivers)
+
+        // Filter drivers with valid coordinates for nearest driver calculation
+        const driversWithCoords = filteredDrivers.filter(
+          driver => driver.current_lat !== null && driver.current_lng !== null
+        ) as Driver[]
+
+        // If we have pickup location, find nearest driver
+        if (pickupLocation && driversWithCoords.length > 0) {
+          const nearest = findNearestDriver(driversWithCoords, pickupLocation)
+          setNearestDriver(nearest)
+          setSelectedDriver(nearest)
+        }
+
+      } catch (error) {
+        console.error('Error fetching drivers:', error)
+      } finally {
+        setLoading(false)
       }
-
-      console.log(`Found ${filteredDrivers.length} drivers within 10km`)
-      setAvailableDrivers(filteredDrivers)
-
-      // Set nearest driver
-      if (filteredDrivers.length > 0) {
-        const nearest = findNearestDriver(filteredDrivers, pickupLocation || userLocation)
-        setNearestDriver(nearest)
-        setSelectedDriver(nearest)
-      }
-
-    } catch (error) {
-      console.error('Error fetching drivers:', error)
-    } finally {
-      setLoading(false)
     }
-  }
 
-  fetchAvailableDrivers()
-  const interval = setInterval(fetchAvailableDrivers, 30000)
+    fetchAvailableDrivers()
+    const interval = setInterval(fetchAvailableDrivers, 30000)
 
-  return () => clearInterval(interval)
-}, [pickupLocation])
+    return () => clearInterval(interval)
+  }, [pickupLocation, searchRadius])
 
   // Calculate fare and ETA when route changes
   useEffect(() => {
@@ -263,7 +278,7 @@ useEffect(() => {
       setFareEstimate(fare)
       
       // Calculate ETA (route time + driver arrival time)
-      let driverArrivalTime = 5 // Default 5 minutes if no driver
+      let driverArrivalTime = 10 // Default 10 minutes if no driver
       if (selectedDriver && selectedDriver.current_lat && selectedDriver.current_lng) {
         driverArrivalTime = estimateArrivalTime(selectedDriver, pickupLocation)
       } else if (nearestDriver && nearestDriver.current_lat && nearestDriver.current_lng) {
@@ -419,6 +434,14 @@ useEffect(() => {
     { id: 'cash', name: 'Cash', icon: DollarSign },
   ]
 
+  // Search radius options
+  const radiusOptions = [
+    { value: 5, label: '5 km' },
+    { value: 10, label: '10 km' },
+    { value: 15, label: '15 km' },
+    { value: 20, label: '20 km' },
+  ]
+
   // Helper function to get driver initials
   const getDriverInitials = (driver: Driver) => {
     const name = driver.profiles.full_name || 'Driver'
@@ -438,6 +461,35 @@ useEffect(() => {
   // Helper function to check if driver has valid coordinates
   const hasValidCoordinates = (driver: Driver | null) => {
     return driver && driver.current_lat !== null && driver.current_lng !== null
+  }
+
+  // Helper function to get driver distance
+  const getDriverDistance = (driver: Driver) => {
+    if (!driver.distance || !pickupLocation) return 'N/A'
+    return driver.distance.toFixed(1)
+  }
+
+  // Request location permission
+  const requestLocationPermission = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const location = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            address: 'Current location'
+          }
+          setUserLocation(location)
+          setPickupLocation(location)
+          setPickupAddress('Current location')
+          setLocationPermission(true)
+        },
+        (error) => {
+          console.error('Location permission denied:', error)
+          setLocationPermission(false)
+        }
+      )
+    }
   }
 
   if (loading) {
@@ -503,6 +555,11 @@ useEffect(() => {
                       <MapPin className="h-3 w-3 text-white" />
                     </div>
                     <Label htmlFor="pickup">Pickup Location</Label>
+                    {!locationPermission && (
+                      <Badge variant="outline" className="ml-2 text-xs">
+                        Location disabled
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Input
@@ -535,6 +592,8 @@ useEffect(() => {
                         if (userLocation) {
                           setPickupLocation(userLocation)
                           setPickupAddress(userLocation.address || 'Current location')
+                        } else {
+                          requestLocationPermission()
                         }
                       }}
                       title="Use current location"
@@ -579,14 +638,53 @@ useEffect(() => {
                 </div>
 
                 {/* Interactive Map */}
-                <div className="rounded-lg overflow-hidden border h-[400px]">
-                  <OpenStreetMap
-                    pickupLocation={pickupLocation || undefined}
-                    dropoffLocation={dropoffLocation || undefined}
-                    onRouteCalculated={handleRouteCalculated}
-                    showAvailableDrivers={true}
-                    onDriverSelected={handleDriverSelect}
-                  />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Map View</Label>
+                    <div className="flex items-center gap-2">
+                      <Compass className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Search radius:</span>
+                      <div className="flex gap-1">
+                        {radiusOptions.map((option) => (
+                          <Button
+                            key={option.value}
+                            type="button"
+                            variant={searchRadius === option.value ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setSearchRadius(option.value)}
+                            className="h-8 px-3 text-xs"
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg overflow-hidden border h-[400px] relative">
+                    <UnifiedMap
+                      variant="booking"
+                      pickupLocation={pickupLocation || undefined}
+                      dropoffLocation={dropoffLocation || undefined}
+                      onRouteCalculated={handleRouteCalculated}
+                      showAvailableDrivers={true}
+                      onDriverSelected={handleDriverSelect}
+                      className="h-full"
+                    />
+                    {!locationPermission && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-10">
+                        <div className="text-center p-6 bg-white rounded-lg shadow-lg max-w-sm mx-4">
+                          <Navigation className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                          <h3 className="font-semibold mb-2">Location Required</h3>
+                          <p className="text-muted-foreground mb-4">
+                            Enable location services to see drivers on the map and calculate distances.
+                          </p>
+                          <Button onClick={requestLocationPermission}>
+                            Enable Location
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Driver Selection */}
@@ -595,7 +693,9 @@ useEffect(() => {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h3 className="font-semibold">Available Drivers ({availableDrivers.length})</h3>
-                        <p className="text-sm text-muted-foreground">Click on map or select below</p>
+                        <p className="text-sm text-muted-foreground">
+                          Showing drivers within {searchRadius}km • Click on map or select below
+                        </p>
                       </div>
                       <Button
                         variant="ghost"
@@ -633,11 +733,16 @@ useEffect(() => {
                                     <span className="text-xs">{getDriverRating(driver)}</span>
                                   </div>
                                 </div>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {driver.vehicle_make} {driver.vehicle_model} • {driver.vehicle_color}
-                                </p>
+                                <div className="flex items-center justify-between mt-1">
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {driver.vehicle_make} {driver.vehicle_model} • {driver.vehicle_color}
+                                  </p>
+                                  <Badge variant="outline" className="text-xs">
+                                    {getDriverDistance(driver)} km
+                                  </Badge>
+                                </div>
                                 <p className="text-xs text-muted-foreground">
-                                  {getDriverRideCount(driver)} rides
+                                  {getDriverRideCount(driver)} rides • ETA: {estimateArrivalTime(driver, pickupLocation!)} min
                                 </p>
                               </div>
                               {selectedDriver?.user_id === driver.user_id && (
@@ -665,6 +770,10 @@ useEffect(() => {
                                 <span className="text-sm text-muted-foreground">
                                   {getDriverRideCount(selectedDriver)} rides
                                 </span>
+                                <span className="text-sm text-muted-foreground">•</span>
+                                <Badge variant="secondary" className="text-xs">
+                                  {getDriverDistance(selectedDriver)} km away
+                                </Badge>
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 {selectedDriver.vehicle_make} {selectedDriver.vehicle_model} • {selectedDriver.vehicle_color}
@@ -788,9 +897,14 @@ useEffect(() => {
                                 ({getDriverRideCount(selectedDriver)} rides)
                               </span>
                             </div>
-                            <p className="text-sm text-muted-foreground truncate">
-                              {selectedDriver.vehicle_make} {selectedDriver.vehicle_model}
-                            </p>
+                            <div className="flex items-center justify-between mt-1">
+                              <p className="text-sm text-muted-foreground truncate">
+                                {selectedDriver.vehicle_make} {selectedDriver.vehicle_model}
+                              </p>
+                              <Badge variant="outline" className="text-xs">
+                                {getDriverDistance(selectedDriver)} km away
+                              </Badge>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -805,7 +919,10 @@ useEffect(() => {
 
                     {/* Available Drivers Count */}
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Available Drivers</span>
+                      <div>
+                        <span className="text-muted-foreground">Available Drivers</span>
+                        <p className="text-xs text-muted-foreground">Within {searchRadius}km radius</p>
+                      </div>
                       <Badge variant={availableDrivers.length > 0 ? "default" : "secondary"}>
                         {availableDrivers.length}
                       </Badge>
@@ -815,8 +932,22 @@ useEffect(() => {
                       <div className="p-3 rounded-lg bg-muted">
                         <div className="text-center">
                           <Car className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                          <p className="text-sm text-muted-foreground">No drivers available</p>
-                          <p className="text-xs text-muted-foreground">Try again in a few minutes</p>
+                          <p className="text-sm text-muted-foreground">No drivers available within {searchRadius}km</p>
+                          <p className="text-xs text-muted-foreground">Try increasing search radius or adjusting location</p>
+                          <div className="flex gap-2 justify-center mt-2">
+                            {radiusOptions.map((option) => (
+                              <Button
+                                key={option.value}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSearchRadius(option.value)}
+                                className="h-8 px-3 text-xs"
+                              >
+                                {option.label}
+                              </Button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -919,10 +1050,17 @@ useEffect(() => {
                 Please select a driver to continue
               </p>
             )}
-            {availableDrivers.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground">
-                No drivers available. Please try again later.
-              </p>
+            {availableDrivers.length === 0 && pickupLocation && dropoffLocation && (
+              <div className="text-center text-sm text-muted-foreground">
+                <p>No drivers available within {searchRadius}km.</p>
+                <Button
+                  variant="link"
+                  className="mt-2"
+                  onClick={() => setSearchRadius(searchRadius + 5)}
+                >
+                  Increase search radius
+                </Button>
+              </div>
             )}
           </div>
         </div>
