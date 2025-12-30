@@ -157,83 +157,103 @@ export default function BookRidePage() {
   }, [])
 
   // Fetch available drivers
-  useEffect(() => {
-    const fetchAvailableDrivers = async () => {
-      try {
-        const supabase = createClient()
-        
-        const { data: driversData, error } = await supabase
-          .from('driver_details')
-          .select(`
-            user_id,
-            current_lat,
-            current_lng,
-            vehicle_make,
-            vehicle_model,
-            vehicle_color,
-            vehicle_plate,
-            is_online,
-            is_verified,
-            profiles!inner (
-              full_name,
-              rating,
-              total_rides,
-              avatar_url
-            )
-          `)
-          .eq('is_online', true)
-          .gte('is_verified', false)
-          .not('current_lat', 'is', null)
-          .not('current_lng', 'is', null)
+  // Update the useEffect that fetches drivers
+useEffect(() => {
+  const fetchAvailableDrivers = async () => {
+    try {
+      const supabase = createClient()
+      
+      // Get ALL online drivers first
+      const { data: driversData, error } = await supabase
+        .from('driver_details')
+        .select(`
+          user_id,
+          current_lat,
+          current_lng,
+          vehicle_make,
+          vehicle_model,
+          vehicle_color,
+          vehicle_plate,
+          is_online,
+          is_verified,
+          profiles!inner (
+            full_name,
+            rating,
+            total_rides,
+            avatar_url
+          )
+        `)
+        .eq('is_online', true)
+        .eq('is_verified', true)
+        .not('current_lat', 'is', null)
+        .not('current_lng', 'is', null)
 
-        if (error) throw error
+      if (error) throw error
 
-        // Transform the data to match our interface
-        const drivers: Driver[] = (driversData || []).map((driver: any) => ({
-          user_id: driver.user_id,
-          current_lat: driver.current_lat,
-          current_lng: driver.current_lng,
-          vehicle_make: driver.vehicle_make || '',
-          vehicle_model: driver.vehicle_model || '',
-          vehicle_color: driver.vehicle_color || '',
-          vehicle_plate: driver.vehicle_plate || '',
-          is_online: driver.is_online || false,
-          is_verified: driver.is_verified || false,
-          profiles: (Array.isArray(driver.profiles) ? driver.profiles[0] : driver.profiles) || {
-            full_name: null,
-            rating: null,
-            total_rides: null,
-            avatar_url: null
-          }
-        }))
-
-        console.log('Fetched drivers:', drivers.length)
-        setAvailableDrivers(drivers)
-
-        // Filter drivers with valid coordinates
-        const driversWithCoords = drivers.filter(
-          driver => driver.current_lat !== null && driver.current_lng !== null
-        )
-
-        // If we have pickup location, find nearest driver
-        if (pickupLocation && driversWithCoords.length > 0) {
-          const nearest = findNearestDriver(driversWithCoords as Driver[], pickupLocation)
-          setNearestDriver(nearest)
-          setSelectedDriver(nearest)
+      // Transform the data
+      const drivers: Driver[] = (driversData || []).map((driver: any) => ({
+        user_id: driver.user_id,
+        current_lat: driver.current_lat,
+        current_lng: driver.current_lng,
+        vehicle_make: driver.vehicle_make || '',
+        vehicle_model: driver.vehicle_model || '',
+        vehicle_color: driver.vehicle_color || '',
+        vehicle_plate: driver.vehicle_plate || '',
+        is_online: driver.is_online || false,
+        is_verified: driver.is_verified || false,
+        profiles: driver.profiles || {
+          full_name: null,
+          rating: null,
+          total_rides: null,
+          avatar_url: null
         }
+      }))
 
-      } catch (error) {
-        console.error('Error fetching drivers:', error)
-      } finally {
-        setLoading(false)
+      // Filter and sort by distance if we have pickup location
+      let filteredDrivers = drivers
+      if (pickupLocation) {
+        // Add distance to each driver
+        const driversWithDistance = drivers.map(driver => {
+          const distance = driver.current_lat && driver.current_lng 
+            ? calculateDistance(
+                pickupLocation.lat,
+                pickupLocation.lng,
+                driver.current_lat,
+                driver.current_lng
+              )
+            : Infinity
+          
+          return { ...driver, distance }
+        })
+        
+        // Filter by max distance (e.g., 10km)
+        filteredDrivers = driversWithDistance
+          .filter(driver => driver.distance <= 10)
+          .sort((a, b) => a.distance - b.distance) // Closest first
       }
+
+      console.log(`Found ${filteredDrivers.length} drivers within 10km`)
+      setAvailableDrivers(filteredDrivers)
+
+      // Set nearest driver
+      if (filteredDrivers.length > 0) {
+        const nearest = findNearestDriver(filteredDrivers, pickupLocation || userLocation)
+        setNearestDriver(nearest)
+        setSelectedDriver(nearest)
+      }
+
+    } catch (error) {
+      console.error('Error fetching drivers:', error)
+    } finally {
+      setLoading(false)
     }
+  }
 
-    fetchAvailableDrivers()
-    const interval = setInterval(fetchAvailableDrivers, 30000)
+  fetchAvailableDrivers()
+  const interval = setInterval(fetchAvailableDrivers, 30000)
 
-    return () => clearInterval(interval)
-  }, [pickupLocation])
+  return () => clearInterval(interval)
+}, [pickupLocation])
 
   // Calculate fare and ETA when route changes
   useEffect(() => {
