@@ -31,7 +31,7 @@ const quickActions = [
 
 class MiMoAIClient {
   private apiKey: string
-  private baseURL = 'https://api.mi.mo/v1'
+  private baseURL = 'https://openrouter.ai/api/v1' // Updated endpoint
 
   constructor(apiKey: string) {
     this.apiKey = apiKey
