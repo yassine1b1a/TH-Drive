@@ -65,6 +65,7 @@ interface Driver {
   vehicle_color: string
   vehicle_plate: string
   is_online: boolean
+  is_verified: boolean // <--- ADD THIS
   profiles: {
     full_name: string
     rating: number
@@ -156,6 +157,7 @@ export default function BookRidePage() {
   }, [])
 
   // Fetch available drivers
+  // Fetch available drivers
   useEffect(() => {
     const fetchAvailableDrivers = async () => {
       try {
@@ -197,9 +199,7 @@ export default function BookRidePage() {
           vehicle_color: driver.vehicle_color || '',
           vehicle_plate: driver.vehicle_plate || '',
           is_online: driver.is_online || false,
-          is_verified: driver.is_verified || false,
-          // FIX: Changed 'profile' to 'profiles' to match Interface
-          // FIX: Handle Supabase returning an array or single object
+          is_verified: driver.is_verified || false, // <--- Ensure this is here
           profiles: (Array.isArray(driver.profiles) ? driver.profiles[0] : driver.profiles) || {
             full_name: 'Unknown Driver',
             rating: 5.0,
@@ -226,7 +226,7 @@ export default function BookRidePage() {
     }
 
     fetchAvailableDrivers()
-    const interval = setInterval(fetchAvailableDrivers, 30000) // Refresh every 30 seconds
+    const interval = setInterval(fetchAvailableDrivers, 30000)
 
     return () => clearInterval(interval)
   }, [pickupLocation])
