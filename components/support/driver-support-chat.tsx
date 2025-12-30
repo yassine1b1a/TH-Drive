@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Bot, User, Loader2, Sparkles, HelpCircle, CreditCard, Star, Car } from "lucide-react"
+import { Send, Bot, User, Loader2, Sparkles, DollarSign, Navigation, AlertTriangle, HelpCircle } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
 interface Message {
@@ -18,21 +18,21 @@ interface Message {
   created_at: string
 }
 
-interface SupportChatProps {
+interface DriverSupportChatProps {
   userId: string
 }
 
 const quickActions = [
-  { icon: Car, label: "Booking Help", message: "How do I book a ride?" },
-  { icon: CreditCard, label: "Payment Issues", message: "I have a payment issue" },
-  { icon: Star, label: "Rate Driver", message: "How do I rate my driver?" },
-  { icon: HelpCircle, label: "Report Issue", message: "I want to report an issue with my ride" },
+  { icon: Navigation, label: "Navigation Help", message: "How do I use the navigation features?" },
+  { icon: DollarSign, label: "Earnings", message: "How are my earnings calculated?" },
+  { icon: AlertTriangle, label: "Report Passenger", message: "I need to report an issue with a passenger" },
+  { icon: HelpCircle, label: "Account Help", message: "I have questions about my driver account" },
 ]
 
-// CORRECT OpenRouter API Client
+// OpenRouter AI Client
 class OpenRouterAIClient {
   private apiKey: string
-  private baseURL = 'https://openrouter.ai/api/v1' // Correct OpenRouter endpoint
+  private baseURL = 'https://openrouter.ai/api/v1'
 
   constructor(apiKey: string) {
     this.apiKey = apiKey
@@ -45,7 +45,7 @@ class OpenRouterAIClient {
   } = {}) {
     try {
       const request = {
-        model: options.model || 'allenai/olmo-3.1-32b-think:free', // Your specified model
+        model: options.model || 'allenai/olmo-3.1-32b-think:free',
         messages,
         temperature: options.temperature || 0.7,
         max_tokens: options.maxTokens || 500,
@@ -58,7 +58,7 @@ class OpenRouterAIClient {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
           'HTTP-Referer': 'https://th-drive.thprojects.ovh',
-          'X-Title': 'TH-Drive Support'
+          'X-Title': 'TH-Drive Driver Support'
         },
         body: JSON.stringify(request)
       })
@@ -85,10 +85,10 @@ class OpenRouterAIClient {
   }
 }
 
-// Use your actual API key
+// Initialize with your API key
 const aiClient = new OpenRouterAIClient('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')
 
-export function SupportChat({ userId }: SupportChatProps) {
+export function DriverSupportChat({ userId }: DriverSupportChatProps) {
   const [savedMessages, setSavedMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -133,7 +133,6 @@ export function SupportChat({ userId }: SupportChatProps) {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
-    // Save user message to database
     const supabase = createClient()
     const { data: savedUserMessage } = await supabase
       .from("support_messages")
@@ -150,7 +149,6 @@ export function SupportChat({ userId }: SupportChatProps) {
       setSavedMessages((prev) => [...prev, savedUserMessage])
     }
 
-    // Add to AI messages
     const userMessage = {
       id: `user-${Date.now()}`,
       role: 'user' as const,
@@ -158,13 +156,12 @@ export function SupportChat({ userId }: SupportChatProps) {
     }
     setAiMessages(prev => [...prev, userMessage])
     
-    // Get AI response
     setIsLoading(true)
     try {
       const messagesForAI = [
         {
           role: 'system' as const,
-          content: 'You are a helpful support assistant for TH-Drive, a ride-sharing service. Help users with booking, payments, ratings, and reporting issues. Keep responses concise and helpful.'
+          content: 'You are a helpful support assistant for TH-Drive driver support. Help drivers with earnings, navigation, passenger issues, account management, driver ratings, vehicle issues, payment processing, and driver-specific questions. Keep responses concise and helpful.'
         },
         ...savedMessages.map(msg => ({
           role: msg.is_from_user ? 'user' as const : 'assistant' as const,
@@ -187,7 +184,6 @@ export function SupportChat({ userId }: SupportChatProps) {
       }
       setAiMessages(prev => [...prev, aiResponseMessage])
 
-      // Save AI response to database
       await supabase.from("support_messages").insert({
         user_id: userId,
         message: response.content,
@@ -198,20 +194,31 @@ export function SupportChat({ userId }: SupportChatProps) {
     } catch (error) {
       console.error('Error getting AI response:', error)
       
-      // Fallback mock response if API fails
-      const fallbackResponse = {
+      // Fallback mock response for common driver questions
+      const fallbackResponses: Record<string, string> = {
+        "How do I use the navigation features?": "You can access navigation through the Driver Dashboard. Tap the 'Navigation' button to get turn-by-turn directions to your passenger's pickup location. Make sure your phone's location services are enabled for accurate routing.",
+        "How are my earnings calculated?": "Earnings are calculated based on: 1) Base fare, 2) Distance traveled, 3) Time spent, and 4) Surge pricing during peak hours. You receive 75% of the total fare, with 25% going to TH-Drive as a service fee.",
+        "I need to report an issue with a passenger": "To report a passenger issue: 1) Go to the ride details page, 2) Tap 'Report Issue', 3) Select the issue type, 4) Add details and submit. Our support team will review within 24 hours.",
+        "I have questions about my driver account": "For account-related questions: Check the Driver Help section in the app or contact driver-support@th-drive.com. Common topics include: profile updates, vehicle information, documents, and account settings."
+      }
+
+      const fallbackResponse = fallbackResponses[input] || 
+        "I'm here to help with TH-Drive driver support! Currently, our AI service is experiencing temporary issues. For immediate assistance, please contact driver-support@th-drive.com or try one of the quick actions above."
+
+      const aiResponseMessage = {
         id: `ai-fallback-${Date.now()}`,
         role: 'assistant' as const,
-        content: "I'm here to help with TH-Drive support! Currently, our AI service is experiencing temporary issues. For immediate assistance, please contact support@th-drive.com or try one of the quick actions above."
+        content: fallbackResponse
       }
-      setAiMessages(prev => [...prev, fallbackResponse])
+      setAiMessages(prev => [...prev, aiResponseMessage])
 
       await supabase.from("support_messages").insert({
         user_id: userId,
-        message: fallbackResponse.content,
+        message: fallbackResponse,
         is_from_user: false,
         is_ai_response: true,
       })
+
     } finally {
       setIsLoading(false)
       setInput("")
@@ -227,7 +234,6 @@ export function SupportChat({ userId }: SupportChatProps) {
     ...aiMessages,
   ]
 
-  // Deduplicate messages by content
   const uniqueMessages = allMessages.filter(
     (message, index, self) => index === self.findIndex((m) => m.content === message.content && m.role === message.role),
   )
@@ -236,12 +242,12 @@ export function SupportChat({ userId }: SupportChatProps) {
     <Card className="mx-auto max-w-3xl shadow-lg shadow-primary/5 border-border/50">
       <CardHeader className="border-b border-border pb-4">
         <CardTitle className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-            <Sparkles className="h-5 w-5 text-primary" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20">
+            <Sparkles className="h-5 w-5 text-blue-500" />
           </div>
           <div>
-            <span className="text-lg">AI Support Assistant</span>
-            <p className="text-sm font-normal text-muted-foreground">Powered by OpenRouter AI - Available 24/7</p>
+            <span className="text-lg">Driver Support Assistant</span>
+            <p className="text-sm font-normal text-muted-foreground">Powered by OpenRouter AI - Get help with your driver account</p>
           </div>
         </CardTitle>
       </CardHeader>
@@ -257,15 +263,14 @@ export function SupportChat({ userId }: SupportChatProps) {
               animate={{ opacity: 1, y: 0 }}
               className="flex h-full flex-col items-center justify-center text-center px-4"
             >
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
-                <Bot className="h-8 w-8 text-primary" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/20">
+                <Bot className="h-8 w-8 text-blue-500" />
               </div>
-              <h3 className="mt-4 text-lg font-semibold">Hi! How can I help you today?</h3>
+              <h3 className="mt-4 text-lg font-semibold">Driver Support</h3>
               <p className="mt-2 text-sm text-muted-foreground max-w-md">
-                I'm your TH-Drive support assistant. Ask me anything about bookings, payments, ratings, or report any issues.
+                Need help with your driver account? I can assist with earnings, navigation, passenger issues, and more.
               </p>
 
-              {/* Quick Actions */}
               <div className="mt-6 grid grid-cols-2 gap-2 w-full max-w-sm">
                 {quickActions.map((action, index) => (
                   <motion.button
@@ -274,9 +279,9 @@ export function SupportChat({ userId }: SupportChatProps) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
                     onClick={() => handleQuickAction(action.message)}
-                    className="flex items-center gap-2 rounded-xl border border-border bg-card p-3 text-left text-sm font-medium transition-all hover:bg-muted hover:border-primary/50"
+                    className="flex items-center gap-2 rounded-xl border border-border bg-card p-3 text-left text-sm font-medium transition-all hover:bg-muted hover:border-blue-500/50"
                   >
-                    <action.icon className="h-4 w-4 text-primary" />
+                    <action.icon className="h-4 w-4 text-blue-500" />
                     {action.label}
                   </motion.button>
                 ))}
@@ -301,13 +306,13 @@ export function SupportChat({ userId }: SupportChatProps) {
                     >
                       <div
                         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
-                          message.role === "user" ? "bg-primary" : "bg-muted"
+                          message.role === "user" ? "bg-primary" : "bg-blue-500/20"
                         }`}
                       >
                         {message.role === "user" ? (
                           <User className="h-4 w-4 text-primary-foreground" />
                         ) : (
-                          <Bot className="h-4 w-4 text-muted-foreground" />
+                          <Bot className="h-4 w-4 text-blue-500" />
                         )}
                       </div>
                       <div
@@ -329,8 +334,8 @@ export function SupportChat({ userId }: SupportChatProps) {
                   className="flex justify-start"
                 >
                   <div className="flex items-start gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-muted">
-                      <Bot className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/20">
+                      <Bot className="h-4 w-4 text-blue-500" />
                     </div>
                     <div className="rounded-2xl bg-muted px-4 py-3">
                       <div className="flex items-center gap-1">
@@ -355,7 +360,6 @@ export function SupportChat({ userId }: SupportChatProps) {
           )}
         </ScrollArea>
 
-        {/* Input Area */}
         <div className="border-t border-border p-4">
           <form onSubmit={handleSubmit} className="flex gap-2">
             <Input
