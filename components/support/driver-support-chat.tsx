@@ -29,7 +29,6 @@ const quickActions = [
   { icon: HelpCircle, label: "Account Help", message: "I have questions about my driver account" },
 ]
 
-// OPENROTER API CLIENT WITH YOUR KEY
 const OPENROUTER_API_KEY = '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'
 const OPENROUTER_MODEL = 'allenai/olmo-3.1-32b-think:free'
 
@@ -50,7 +49,6 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
   }, [userId])
 
   useEffect(() => {
-    // Auto-scroll to bottom
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
@@ -88,7 +86,7 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
     setInput(message)
   }
 
-  // REAL OPENROUTER API CALL
+  // FIXED: Proper OpenRouter API call with correct response extraction
   const callOpenRouterAPI = async (userMessage: string): Promise<string> => {
     try {
       console.log("🔍 Calling OpenRouter API with key:", OPENROUTER_API_KEY.substring(0, 10) + "...")
@@ -109,8 +107,6 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
         max_tokens: 500
       }
 
-      console.log("📤 Request body:", JSON.stringify(requestBody, null, 2))
-
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -122,22 +118,22 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
         body: JSON.stringify(requestBody)
       })
 
-      console.log("📥 Response status:", response.status)
-
       if (!response.ok) {
         const errorText = await response.text()
-        console.error("❌ API Error response:", errorText)
         throw new Error(`API Error: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
-      console.log("✅ API Response data:", data)
-
-      if (!data.choices || data.choices.length === 0) {
-        throw new Error('No response from AI')
+      
+      // FIXED: Proper response extraction
+      if (data.choices && data.choices.length > 0 && data.choices[0].message && data.choices[0].message.content) {
+        const aiResponse = data.choices[0].message.content
+        console.log("✅ AI Response extracted:", aiResponse.substring(0, 100) + "...")
+        return aiResponse
+      } else {
+        console.error("❌ Unexpected API response format:", data)
+        throw new Error('Invalid API response format')
       }
-
-      return data.choices[0].message.content
 
     } catch (error) {
       console.error("❌ OpenRouter API call failed:", error)
@@ -192,13 +188,13 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
     // 3. SHOW LOADING AND GET AI RESPONSE
     setIsLoading(true)
     let aiResponse = ""
-    let aiMessageId = `ai-${Date.now()}`
+    const aiMessageId = `ai-${Date.now()}`
 
     try {
       // GET REAL AI RESPONSE FROM OPENROUTER
       aiResponse = await callOpenRouterAPI(userMessage)
       
-      console.log("🤖 AI Response received:", aiResponse)
+      console.log("🤖 AI Response received successfully!")
 
     } catch (apiError) {
       console.error("API failed, using fallback:", apiError)
@@ -256,7 +252,7 @@ Is there anything specific about your driver account you'd like help with?`
       }
     }
 
-    // 4. ADD AI RESPONSE TO UI
+    // 4. ADD AI RESPONSE TO UI IMMEDIATELY
     setMessages(prev => [...prev, {
       id: aiMessageId,
       role: 'assistant',
