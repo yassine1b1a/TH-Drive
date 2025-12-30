@@ -29,9 +29,10 @@ const quickActions = [
   { icon: HelpCircle, label: "Report Issue", message: "I want to report an issue with my ride" },
 ]
 
-class MiMoAIClient {
+// CORRECT OpenRouter API Client
+class OpenRouterAIClient {
   private apiKey: string
-  private baseURL = 'https://openrouter.ai/api/v1' // Updated endpoint
+  private baseURL = 'https://openrouter.ai/api/v1' // Correct OpenRouter endpoint
 
   constructor(apiKey: string) {
     this.apiKey = apiKey
@@ -44,7 +45,7 @@ class MiMoAIClient {
   } = {}) {
     try {
       const request = {
-        model: options.model || 'allenai/olmo-3.1-32b-think:free',
+        model: options.model || 'allenai/olmo-3.1-32b-think:free', // Your specified model
         messages,
         temperature: options.temperature || 0.7,
         max_tokens: options.maxTokens || 500,
@@ -55,14 +56,16 @@ class MiMoAIClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
+          'Authorization': `Bearer ${this.apiKey}`,
+          'HTTP-Referer': 'https://th-drive.thprojects.ovh',
+          'X-Title': 'TH-Drive Support'
         },
         body: JSON.stringify(request)
       })
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(`AI API error: ${response.status} - ${errorText}`)
+        throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`)
       }
 
       const data = await response.json()
@@ -76,13 +79,14 @@ class MiMoAIClient {
         usage: data.usage
       }
     } catch (error) {
-      console.error('AI chat error:', error)
+      console.error('OpenRouter chat error:', error)
       throw error
     }
   }
 }
 
-const aiClient = new MiMoAIClient('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')
+// Use your actual API key
+const aiClient = new OpenRouterAIClient('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')
 
 export function SupportChat({ userId }: SupportChatProps) {
   const [savedMessages, setSavedMessages] = useState<Message[]>([])
@@ -160,7 +164,7 @@ export function SupportChat({ userId }: SupportChatProps) {
       const messagesForAI = [
         {
           role: 'system' as const,
-          content: 'You are a helpful support assistant for TH-Drive, a ride-sharing service. Help users with booking, payments, ratings, and reporting issues.'
+          content: 'You are a helpful support assistant for TH-Drive, a ride-sharing service. Help users with booking, payments, ratings, and reporting issues. Keep responses concise and helpful.'
         },
         ...savedMessages.map(msg => ({
           role: msg.is_from_user ? 'user' as const : 'assistant' as const,
@@ -193,6 +197,21 @@ export function SupportChat({ userId }: SupportChatProps) {
 
     } catch (error) {
       console.error('Error getting AI response:', error)
+      
+      // Fallback mock response if API fails
+      const fallbackResponse = {
+        id: `ai-fallback-${Date.now()}`,
+        role: 'assistant' as const,
+        content: "I'm here to help with TH-Drive support! Currently, our AI service is experiencing temporary issues. For immediate assistance, please contact support@th-drive.com or try one of the quick actions above."
+      }
+      setAiMessages(prev => [...prev, fallbackResponse])
+
+      await supabase.from("support_messages").insert({
+        user_id: userId,
+        message: fallbackResponse.content,
+        is_from_user: false,
+        is_ai_response: true,
+      })
     } finally {
       setIsLoading(false)
       setInput("")
@@ -222,7 +241,7 @@ export function SupportChat({ userId }: SupportChatProps) {
           </div>
           <div>
             <span className="text-lg">AI Support Assistant</span>
-            <p className="text-sm font-normal text-muted-foreground">Powered by MiMo AI - Available 24/7</p>
+            <p className="text-sm font-normal text-muted-foreground">Powered by OpenRouter AI - Available 24/7</p>
           </div>
         </CardTitle>
       </CardHeader>
@@ -355,7 +374,7 @@ export function SupportChat({ userId }: SupportChatProps) {
             </Button>
           </form>
           <p className="mt-2 text-center text-xs text-muted-foreground">
-            Powered by MiMo AI using allenai/olmo-3.1-32b-think:free model
+            Powered by OpenRouter AI using allenai/olmo-3.1-32b-think:free model
           </p>
         </div>
       </CardContent>
