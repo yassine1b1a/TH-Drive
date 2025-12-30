@@ -56,11 +56,11 @@ interface RouteInfo {
   instructions: any[]
 }
 
+// In page.tsx, update the Driver interface:
 interface Driver {
   user_id: string
-  // Update these two lines to allow null
-  current_lat: number | null
-  current_lng: number | null
+  current_lat: number
+  current_lng: number
   vehicle_make: string
   vehicle_model: string
   vehicle_color: string
@@ -68,13 +68,12 @@ interface Driver {
   is_online: boolean
   is_verified: boolean
   profiles: {
-    full_name: string
-    rating: number
-    total_rides: number
+    full_name: string | null  // <-- Change from string to string | null
+    rating: number | null     // <-- Also update rating and total_rides
+    total_rides: number | null
     avatar_url?: string
   }
 }
-
 export default function BookRidePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
