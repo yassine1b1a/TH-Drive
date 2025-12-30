@@ -182,7 +182,7 @@ export default function BookRidePage() {
             )
           `)
           .eq('is_online', true)
-          .eq('is_verified', true)
+          .gte('is_verified', false)
           .not('current_lat', 'is', null)
           .not('current_lng', 'is', null)
 
