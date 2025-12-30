@@ -36,7 +36,6 @@ import {
   XCircle,
   AlertCircle,
   MessageCircle,
-  CalendarDays,
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 
@@ -118,7 +117,8 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
     try {
       const supabase = createClient()
       
-      const query = supabase
+      // Build query based on role
+      let query = supabase
         .from("rides")
         .select(`
           *,
@@ -132,7 +132,10 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
             full_name,
             email,
             phone,
-            rating
+            rating,
+            vehicle_make,
+            vehicle_model,
+            vehicle_plate
           ),
           ratings!left (
             rating,
@@ -140,8 +143,14 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
             created_at
           )
         `)
-        .eq("user_id", userId)
         .order("created_at", { ascending: false })
+
+      // Filter based on role
+      if (role === "user") {
+        query = query.eq("user_id", userId)
+      } else if (role === "driver") {
+        query = query.eq("driver_id", userId)
+      }
 
       const { data, error } = await query
 
@@ -153,9 +162,19 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
       // Calculate stats
       const totalRides = ridesData.length
       const completedRides = ridesData.filter(r => r.status === "completed").length
-      const totalEarnings = ridesData
-        .filter(r => r.status === "completed" && r.fare)
-        .reduce((sum, ride) => sum + (ride.fare || 0), 0)
+      
+      // Calculate earnings differently for user vs driver
+      let totalEarnings = 0
+      if (role === "user") {
+        totalEarnings = ridesData
+          .filter(r => r.status === "completed" && r.fare)
+          .reduce((sum, ride) => sum + (ride.fare || 0), 0)
+      } else if (role === "driver") {
+        // For driver, calculate earnings (you might want to apply commission rate)
+        totalEarnings = ridesData
+          .filter(r => r.status === "completed" && r.fare)
+          .reduce((sum, ride) => sum + (ride.fare || 0), 0)
+      }
       
       // Calculate average rating
       const ratings = ridesData
@@ -270,7 +289,7 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
       "Fare",
       "Payment Method",
       "Payment Status",
-      "Driver",
+      role === "user" ? "Driver" : "User",
       "Rating",
     ]
 
@@ -285,7 +304,7 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
       `$${ride.fare?.toFixed(2) || "0.00"}`,
       ride.payment_method?.replace("_", " ") || "N/A",
       ride.payment_status,
-      ride.driver?.full_name || "N/A",
+      role === "user" ? ride.driver?.full_name || "N/A" : ride.user?.full_name || "N/A",
       ride.rating?.rating || "Not rated",
     ])
 
@@ -350,7 +369,9 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Spent</p>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {role === "user" ? "Total Spent" : "Total Earnings"}
+                </p>
                 <p className="text-2xl font-bold">${stats.totalEarnings.toFixed(2)}</p>
               </div>
               <DollarSign className="h-8 w-8 text-green-500" />
@@ -458,7 +479,9 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
               <p className="text-muted-foreground">
                 {searchTerm || statusFilter !== "all" || dateRange.start || dateRange.end
                   ? "Try adjusting your filters"
-                  : "Book your first ride to see it here"}
+                  : role === "user" 
+                    ? "Book your first ride to see it here"
+                    : "Complete your first ride to see it here"}
               </p>
             </div>
           ) : (
@@ -473,7 +496,7 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                       <TableHead>Details</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Payment</TableHead>
-                      <TableHead>Driver</TableHead>
+                      <TableHead>{role === "user" ? "Driver" : "User"}</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -543,13 +566,21 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="font-medium">{ride.driver?.full_name || "Driver"}</span>
-                            {ride.driver?.vehicle_make && ride.driver?.vehicle_model && (
+                            <span className="font-medium">
+                              {role === "user" ? ride.driver?.full_name || "Driver" : ride.user?.full_name || "User"}
+                            </span>
+                            {role === "driver" && ride.user?.rating && (
+                              <div className="flex items-center gap-1 mt-1">
+                                <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                                <span className="text-xs">{ride.user.rating.toFixed(1)}</span>
+                              </div>
+                            )}
+                            {role === "user" && ride.driver?.vehicle_make && ride.driver?.vehicle_model && (
                               <span className="text-xs text-muted-foreground">
                                 {ride.driver.vehicle_make} {ride.driver.vehicle_model}
                               </span>
                             )}
-                            {ride.driver?.rating && (
+                            {role === "user" && ride.driver?.rating && (
                               <div className="flex items-center gap-1 mt-1">
                                 <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
                                 <span className="text-xs">{ride.driver.rating.toFixed(1)}</span>
@@ -567,7 +598,7 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                             >
                               Details
                             </Button>
-                            {ride.status === "completed" && !ride.rating && (
+                            {ride.status === "completed" && !ride.rating && role === "user" && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -751,20 +782,30 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
 
               <Separator />
 
-              {/* Driver Info */}
+              {/* User/Driver Info */}
               <div>
-                <h3 className="text-sm font-medium mb-3">Driver Information</h3>
+                <h3 className="text-sm font-medium mb-3">
+                  {role === "user" ? "Driver Information" : "User Information"}
+                </h3>
                 <div className="p-3 bg-muted rounded-lg">
                   <div className="flex items-start gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold flex-shrink-0">
-                      {selectedRide.driver?.full_name?.charAt(0) || "D"}
+                      {role === "user" 
+                        ? selectedRide.driver?.full_name?.charAt(0) || "D"
+                        : selectedRide.user?.full_name?.charAt(0) || "U"}
                     </div>
                     <div className="flex-1">
-                      <p className="font-medium">{selectedRide.driver?.full_name || "Driver"}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedRide.driver?.email || "No email"}
+                      <p className="font-medium">
+                        {role === "user" 
+                          ? selectedRide.driver?.full_name || "Driver"
+                          : selectedRide.user?.full_name || "User"}
                       </p>
-                      {selectedRide.driver && (
+                      <p className="text-sm text-muted-foreground">
+                        {role === "user" 
+                          ? selectedRide.driver?.email || "No email"
+                          : selectedRide.user?.email || "No email"}
+                      </p>
+                      {role === "user" && selectedRide.driver && (
                         <>
                           <p className="text-sm text-muted-foreground mt-1">
                             {selectedRide.driver.vehicle_make} {selectedRide.driver.vehicle_model}
@@ -779,6 +820,12 @@ export default function RideHistory({ userId, role = "user" }: RideHistoryProps)
                             </div>
                           )}
                         </>
+                      )}
+                      {role === "driver" && selectedRide.user?.rating && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                          <span className="text-sm">User Rating: {selectedRide.user.rating.toFixed(1)}</span>
+                        </div>
                       )}
                     </div>
                   </div>
