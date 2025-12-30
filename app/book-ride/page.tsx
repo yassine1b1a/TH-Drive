@@ -161,7 +161,7 @@ export default function BookRidePage() {
       try {
         const supabase = createClient()
         
-        const { data: drivers, error } = await supabase
+        const { data: driversData, error } = await supabase
           .from('driver_details')
           .select(`
             user_id,
@@ -187,8 +187,29 @@ export default function BookRidePage() {
 
         if (error) throw error
 
-        console.log('Fetched drivers:', drivers?.length || 0)
-        setAvailableDrivers(drivers || [])
+        // Transform the data to match our interface
+        const drivers: Driver[] = (driversData || []).map((driver: any) => ({
+          user_id: driver.user_id,
+          current_lat: driver.current_lat,
+          current_lng: driver.current_lng,
+          vehicle_make: driver.vehicle_make || '',
+          vehicle_model: driver.vehicle_model || '',
+          vehicle_color: driver.vehicle_color || '',
+          vehicle_plate: driver.vehicle_plate || '',
+          is_online: driver.is_online || false,
+          is_verified: driver.is_verified || false,
+          // FIX: Changed 'profile' to 'profiles' to match Interface
+          // FIX: Handle Supabase returning an array or single object
+          profiles: (Array.isArray(driver.profiles) ? driver.profiles[0] : driver.profiles) || {
+            full_name: 'Unknown Driver',
+            rating: 5.0,
+            total_rides: 0,
+            avatar_url: null
+          }
+        }))
+
+        console.log('Fetched drivers:', drivers.length)
+        setAvailableDrivers(drivers)
 
         // If we have pickup location, find nearest driver
         if (pickupLocation && drivers && drivers.length > 0) {
@@ -209,7 +230,6 @@ export default function BookRidePage() {
 
     return () => clearInterval(interval)
   }, [pickupLocation])
-
   // Calculate fare and ETA when route changes
   useEffect(() => {
     if (routeInfo && pickupLocation && availableDrivers.length > 0) {
