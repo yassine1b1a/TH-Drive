@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -10,8 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Send, Bot, User, Loader2, Sparkles, HelpCircle, CreditCard, Star, Car } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useMimoChat } from "@/lib/hooks/use-mimo-chat"
-
 
 interface Message {
   id: string
@@ -32,25 +29,68 @@ const quickActions = [
   { icon: HelpCircle, label: "Report Issue", message: "I want to report an issue with my ride" },
 ]
 
+class MiMoAIClient {
+  private apiKey: string
+  private baseURL = 'https://api.mi.mo/v1'
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey
+  }
+
+  async chat(messages: Array<{role: 'user' | 'assistant' | 'system', content: string}>, options: {
+    model?: string
+    temperature?: number
+    maxTokens?: number
+  } = {}) {
+    try {
+      const request = {
+        model: options.model || 'allenai/olmo-3.1-32b-think:free',
+        messages,
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 500,
+        stream: false
+      }
+
+      const response = await fetch(`${this.baseURL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(request)
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`AI API error: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      
+      if (!data.choices || data.choices.length === 0) {
+        throw new Error('No response from AI')
+      }
+
+      return {
+        content: data.choices[0].message.content,
+        usage: data.usage
+      }
+    } catch (error) {
+      console.error('AI chat error:', error)
+      throw error
+    }
+  }
+}
+
+const aiClient = new MiMoAIClient('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')
+
 export function SupportChat({ userId }: SupportChatProps) {
   const [savedMessages, setSavedMessages] = useState<Message[]>([])
+  const [input, setInput] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [aiMessages, setAiMessages] = useState<Array<{id: string, role: 'user' | 'assistant', content: string}>>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
-
-  const { messages, input, handleInputChange, handleSubmit, isLoading, setInput } = useMimoChat({
-    api: "/api/support/chat",
-    body: { userId },
-    onFinish: async (message) => {
-      // Save AI response to database
-      const supabase = createClient()
-      await supabase.from("support_messages").insert({
-        user_id: userId,
-        message: message.content,
-        is_from_user: false,
-        is_ai_response: true,
-      })
-    },
-  })
 
   useEffect(() => {
     loadMessages()
@@ -60,7 +100,7 @@ export function SupportChat({ userId }: SupportChatProps) {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [messages, savedMessages])
+  }, [aiMessages, savedMessages])
 
   const loadMessages = async () => {
     try {
@@ -85,9 +125,9 @@ export function SupportChat({ userId }: SupportChatProps) {
     setInput(message)
   }
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim()) return
+    if (!input.trim() || isLoading) return
 
     // Save user message to database
     const supabase = createClient()
@@ -106,7 +146,57 @@ export function SupportChat({ userId }: SupportChatProps) {
       setSavedMessages((prev) => [...prev, savedUserMessage])
     }
 
-    handleSubmit(e)
+    // Add to AI messages
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user' as const,
+      content: input
+    }
+    setAiMessages(prev => [...prev, userMessage])
+    
+    // Get AI response
+    setIsLoading(true)
+    try {
+      const messagesForAI = [
+        {
+          role: 'system' as const,
+          content: 'You are a helpful support assistant for TH-Drive, a ride-sharing service. Help users with booking, payments, ratings, and reporting issues.'
+        },
+        ...savedMessages.map(msg => ({
+          role: msg.is_from_user ? 'user' as const : 'assistant' as const,
+          content: msg.message
+        })),
+        ...aiMessages.map(msg => ({ role: msg.role, content: msg.content })),
+        userMessage
+      ]
+
+      const response = await aiClient.chat(messagesForAI, {
+        model: 'allenai/olmo-3.1-32b-think:free',
+        temperature: 0.7,
+        maxTokens: 500
+      })
+
+      const aiResponseMessage = {
+        id: `ai-${Date.now()}`,
+        role: 'assistant' as const,
+        content: response.content
+      }
+      setAiMessages(prev => [...prev, aiResponseMessage])
+
+      // Save AI response to database
+      await supabase.from("support_messages").insert({
+        user_id: userId,
+        message: response.content,
+        is_from_user: false,
+        is_ai_response: true,
+      })
+
+    } catch (error) {
+      console.error('Error getting AI response:', error)
+    } finally {
+      setIsLoading(false)
+      setInput("")
+    }
   }
 
   const allMessages = [
@@ -115,10 +205,10 @@ export function SupportChat({ userId }: SupportChatProps) {
       role: m.is_from_user ? ("user" as const) : ("assistant" as const),
       content: m.message,
     })),
-    ...messages,
+    ...aiMessages,
   ]
 
-  // Deduplicate messages by content (in case of overlap)
+  // Deduplicate messages by content
   const uniqueMessages = allMessages.filter(
     (message, index, self) => index === self.findIndex((m) => m.content === message.content && m.role === message.role),
   )
@@ -132,7 +222,7 @@ export function SupportChat({ userId }: SupportChatProps) {
           </div>
           <div>
             <span className="text-lg">AI Support Assistant</span>
-            <p className="text-sm font-normal text-muted-foreground">Powered by AI - Available 24/7</p>
+            <p className="text-sm font-normal text-muted-foreground">Powered by MiMo AI - Available 24/7</p>
           </div>
         </CardTitle>
       </CardHeader>
@@ -153,9 +243,7 @@ export function SupportChat({ userId }: SupportChatProps) {
               </div>
               <h3 className="mt-4 text-lg font-semibold">Hi! How can I help you today?</h3>
               <p className="mt-2 text-sm text-muted-foreground max-w-md">
-                {
-                  "I'm your TH-Drive support assistant. Ask me anything about bookings, payments, ratings, or report any issues."
-                }
+                I'm your TH-Drive support assistant. Ask me anything about bookings, payments, ratings, or report any issues.
               </p>
 
               {/* Quick Actions */}
@@ -180,7 +268,7 @@ export function SupportChat({ userId }: SupportChatProps) {
               <AnimatePresence>
                 {uniqueMessages.map((message, index) => (
                   <motion.div
-                    key={message.id}
+                    key={`${message.id}-${index}`}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
@@ -250,11 +338,11 @@ export function SupportChat({ userId }: SupportChatProps) {
 
         {/* Input Area */}
         <div className="border-t border-border p-4">
-          <form onSubmit={onSubmit} className="flex gap-2">
+          <form onSubmit={handleSubmit} className="flex gap-2">
             <Input
               placeholder="Type your message..."
               value={input}
-              onChange={handleInputChange}
+              onChange={(e) => setInput(e.target.value)}
               disabled={isLoading}
               className="h-11 rounded-xl"
             />
@@ -267,7 +355,7 @@ export function SupportChat({ userId }: SupportChatProps) {
             </Button>
           </form>
           <p className="mt-2 text-center text-xs text-muted-foreground">
-            AI responses may not always be accurate. For urgent issues, contact support@th-drive.com
+            Powered by MiMo AI using allenai/olmo-3.1-32b-think:free model
           </p>
         </div>
       </CardContent>
