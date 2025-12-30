@@ -1,6 +1,6 @@
 "use client"
 
-import { RideHistory } from "@/components/ride-history"
+import RideHistory from "@/components/ride-history"
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
 import { UserSidebar } from "@/components/dashboard/user-sidebar"
