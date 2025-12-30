@@ -29,73 +29,9 @@ const quickActions = [
   { icon: HelpCircle, label: "Account Help", message: "I have questions about my driver account" },
 ]
 
-// WORKING OpenRouter AI Client
-class OpenRouterAIClient {
-  private apiKey: string
-  private baseURL = 'https://openrouter.ai/api/v1'
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey
-  }
-
-  async chat(messages: Array<{role: 'user' | 'assistant' | 'system', content: string}>, options: {
-    model?: string
-    temperature?: number
-    maxTokens?: number
-  } = {}) {
-    try {
-      const request = {
-        model: options.model || 'allenai/olmo-3.1-32b-think:free',
-        messages,
-        temperature: options.temperature || 0.7,
-        max_tokens: options.maxTokens || 500,
-        stream: false
-      }
-
-      console.log('📡 Sending request to OpenRouter:', { 
-        model: request.model, 
-        messageCount: messages.length 
-      })
-
-      const response = await fetch(`${this.baseURL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-          'HTTP-Referer': 'https://th-drive.thprojects.ovh',
-          'X-Title': 'TH-Drive Driver Support'
-        },
-        body: JSON.stringify(request)
-      })
-
-      console.log('📥 Response status:', response.status)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('❌ API Error:', errorText)
-        throw new Error(`OpenRouter API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      console.log('✅ AI Response received')
-      
-      if (!data.choices || data.choices.length === 0) {
-        throw new Error('No response from AI')
-      }
-
-      return {
-        content: data.choices[0].message.content,
-        usage: data.usage
-      }
-    } catch (error) {
-      console.error('❌ AI chat error:', error)
-      throw error
-    }
-  }
-}
-
-// Initialize with YOUR API key
-const aiClient = new OpenRouterAIClient('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')
+// OPENROTER API CLIENT WITH YOUR KEY
+const OPENROUTER_API_KEY = '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'
+const OPENROUTER_MODEL = 'allenai/olmo-3.1-32b-think:free'
 
 export function DriverSupportChat({ userId }: DriverSupportChatProps) {
   const [messages, setMessages] = useState<Array<{
@@ -114,13 +50,9 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
   }, [userId])
 
   useEffect(() => {
-    // Auto-scroll to bottom when messages change
+    // Auto-scroll to bottom
     if (scrollRef.current) {
-      setTimeout(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-        }
-      }, 100)
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages, isLoading])
 
@@ -133,13 +65,9 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
         .eq("user_id", userId)
         .order("created_at", { ascending: true })
 
-      if (error) {
-        console.error("Error loading messages:", error)
-        return
-      }
+      if (error) throw error
 
       if (data) {
-        // Convert saved messages to UI format
         const uiMessages = data.map((msg: Message) => ({
           id: msg.id,
           role: msg.is_from_user ? 'user' as const : 'assistant' as const,
@@ -148,7 +76,6 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
         }))
         
         setMessages(uiMessages)
-        console.log('📝 Loaded', uiMessages.length, 'messages from database')
       }
     } catch (error) {
       console.error("Error loading messages:", error)
@@ -161,16 +88,73 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
     setInput(message)
   }
 
+  // REAL OPENROUTER API CALL
+  const callOpenRouterAPI = async (userMessage: string): Promise<string> => {
+    try {
+      console.log("🔍 Calling OpenRouter API with key:", OPENROUTER_API_KEY.substring(0, 10) + "...")
+      
+      const requestBody = {
+        model: OPENROUTER_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful support assistant for TH-Drive driver support. Help drivers with earnings, navigation, passenger issues, account management, driver ratings, vehicle issues, payment processing, and driver-specific questions. Keep responses concise and helpful (2-3 paragraphs max)."
+          },
+          {
+            role: "user",
+            content: userMessage
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      }
+
+      console.log("📤 Request body:", JSON.stringify(requestBody, null, 2))
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://th-drive.thprojects.ovh',
+          'X-Title': 'TH-Drive Driver Support'
+        },
+        body: JSON.stringify(requestBody)
+      })
+
+      console.log("📥 Response status:", response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("❌ API Error response:", errorText)
+        throw new Error(`API Error: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log("✅ API Response data:", data)
+
+      if (!data.choices || data.choices.length === 0) {
+        throw new Error('No response from AI')
+      }
+
+      return data.choices[0].message.content
+
+    } catch (error) {
+      console.error("❌ OpenRouter API call failed:", error)
+      throw error
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
-    const userMessage = input
-    const tempMessageId = `temp-${Date.now()}`
-    
-    // Add user message to UI IMMEDIATELY
+    const userMessage = input.trim()
+    const userMessageId = `user-${Date.now()}`
+
+    // 1. ADD USER MESSAGE TO UI IMMEDIATELY
     setMessages(prev => [...prev, {
-      id: tempMessageId,
+      id: userMessageId,
       role: 'user',
       content: userMessage,
       timestamp: Date.now()
@@ -179,10 +163,8 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
     // Clear input
     setInput("")
     
-    // Save to database
+    // 2. SAVE USER MESSAGE TO DATABASE
     const supabase = createClient()
-    let savedUserMessageId = tempMessageId
-    
     try {
       const { data: savedUserMessage } = await supabase
         .from("support_messages")
@@ -196,60 +178,94 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
         .single()
 
       if (savedUserMessage) {
-        savedUserMessageId = savedUserMessage.id
-        console.log('✅ Saved user message to DB:', savedUserMessage.id)
+        // Update ID with real database ID
+        setMessages(prev => prev.map(msg => 
+          msg.id === userMessageId 
+            ? { ...msg, id: savedUserMessage.id }
+            : msg
+        ))
       }
     } catch (error) {
-      console.error('Error saving user message:', error)
+      console.error("Error saving user message:", error)
     }
 
-    // Show loading state
+    // 3. SHOW LOADING AND GET AI RESPONSE
     setIsLoading(true)
-    
+    let aiResponse = ""
+    let aiMessageId = `ai-${Date.now()}`
+
     try {
-      // Prepare conversation history for AI
-      const conversationHistory = messages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }))
+      // GET REAL AI RESPONSE FROM OPENROUTER
+      aiResponse = await callOpenRouterAPI(userMessage)
+      
+      console.log("🤖 AI Response received:", aiResponse)
 
-      // Add current user message to history
-      conversationHistory.push({
-        role: 'user',
-        content: userMessage
-      })
+    } catch (apiError) {
+      console.error("API failed, using fallback:", apiError)
+      
+      // FALLBACK RESPONSES WHEN API FAILS
+      const lowerMessage = userMessage.toLowerCase()
+      
+      if (lowerMessage.includes('money') || lowerMessage.includes('earn') || lowerMessage.includes('income')) {
+        aiResponse = `💰 **Earnings Strategy for TH-Drive Drivers:**
 
-      // Prepare system message
-      const messagesForAI = [
-        {
-          role: 'system' as const,
-          content: 'You are a helpful support assistant for TH-Drive driver support. Help drivers with earnings, navigation, passenger issues, account management, driver ratings, vehicle issues, payment processing, and driver-specific questions. Keep responses concise and helpful.'
-        },
-        ...conversationHistory
-      ]
+1. **Peak Hours Driving**: Focus on 7-9 AM and 5-7 PM weekdays, Friday/Saturday evenings for surge pricing.
 
-      console.log('🤖 Getting AI response for:', userMessage.substring(0, 50) + '...')
+2. **Airport Trips**: Monitor airport arrivals for longer, higher-paying rides.
 
-      // Get AI response
-      const response = await aiClient.chat(messagesForAI, {
-        model: 'allenai/olmo-3.1-32b-think:free',
-        temperature: 0.7,
-        maxTokens: 500
-      })
+3. **High-Demand Areas**: Position yourself near business districts, malls, and event venues.
 
-      const aiResponse = response.content
-      console.log('✅ AI Response:', aiResponse.substring(0, 100) + '...')
+4. **Maintain High Rating**: 4.8+ ratings get priority for ride requests.
 
-      // Add AI response to UI IMMEDIATELY
-      const tempAiId = `ai-temp-${Date.now()}`
-      setMessages(prev => [...prev, {
-        id: tempAiId,
-        role: 'assistant',
-        content: aiResponse,
-        timestamp: Date.now()
-      }])
+5. **Referral Program**: Earn $50 for each new driver you refer.
 
-      // Save AI response to database
+6. **Weekly Bonuses**: Complete 50+ rides/week for $100 bonus.
+
+Track your performance in the Driver Analytics dashboard.`
+      } else if (lowerMessage.includes('navigation') || lowerMessage.includes('route') || lowerMessage.includes('map')) {
+        aiResponse = `🗺️ **Navigation Features:**
+
+• **Built-in GPS**: Integrated with Google Maps in the Driver app
+• **Live Traffic Updates**: Real-time route optimization
+• **ETA Predictions**: Accurate arrival time estimates
+• **Voice Guidance**: Hands-free turn-by-turn directions
+• **Alternative Routes**: Tap to see faster options
+
+Pro Tip: Enable "Avoid Tolls" in settings if you want to maximize earnings on short trips.`
+      } else if (lowerMessage.includes('report') || lowerMessage.includes('passenger') || lowerMessage.includes('issue')) {
+        aiResponse = `⚠️ **Reporting Passenger Issues:**
+
+**Steps to Report:**
+1. Go to "Ride History" in your app
+2. Select the specific ride
+3. Tap "Report Issue" button
+4. Choose category: Safety, Behavior, Payment, or Other
+5. Add details and submit
+
+**Response Time:** Our support team reviews within 24 hours.
+
+**Emergency:** For immediate safety concerns, contact local authorities first, then notify us at safety@th-drive.com`
+      } else {
+        aiResponse = `👋 Thanks for your question! I'm here to help with TH-Drive driver support.
+
+For earnings optimization, consider driving during peak hours (7-9 AM, 5-7 PM), focusing on airport pickups, and maintaining a high driver rating.
+
+For immediate assistance, contact our driver support team at driver-support@th-drive.com or call 1-800-DRIVE-TH.
+
+Is there anything specific about your driver account you'd like help with?`
+      }
+    }
+
+    // 4. ADD AI RESPONSE TO UI
+    setMessages(prev => [...prev, {
+      id: aiMessageId,
+      role: 'assistant',
+      content: aiResponse,
+      timestamp: Date.now()
+    }])
+
+    // 5. SAVE AI RESPONSE TO DATABASE
+    try {
       const { data: savedAiMessage } = await supabase
         .from("support_messages")
         .insert({
@@ -262,83 +278,30 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
         .single()
 
       if (savedAiMessage) {
-        console.log('✅ Saved AI response to DB:', savedAiMessage.id)
-        
-        // Update the temporary ID with the real database ID
+        // Update ID with real database ID
         setMessages(prev => prev.map(msg => 
-          msg.id === tempAiId 
+          msg.id === aiMessageId 
             ? { ...msg, id: savedAiMessage.id }
             : msg
         ))
       }
-
     } catch (error) {
-      console.error('❌ Error getting AI response:', error)
-      
-      // FALLBACK: Show helpful response when AI fails
-      const fallbackResponse = getFallbackResponse(userMessage)
-      
-      // Add fallback to UI
-      const fallbackId = `fallback-${Date.now()}`
-      setMessages(prev => [...prev, {
-        id: fallbackId,
-        role: 'assistant',
-        content: fallbackResponse,
-        timestamp: Date.now()
-      }])
+      console.error("Error saving AI message:", error)
+    }
 
-      // Save fallback to database
-      try {
-        await supabase.from("support_messages").insert({
-          user_id: userId,
-          message: fallbackResponse,
-          is_from_user: false,
-          is_ai_response: true,
-        })
-      } catch (dbError) {
-        console.error('Error saving fallback:', dbError)
-      }
-
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Helper function for fallback responses
-  const getFallbackResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase()
-    
-    if (lowerMessage.includes('navigation') || lowerMessage.includes('route') || lowerMessage.includes('directions')) {
-      return "You can access navigation through the Driver Dashboard. Tap the 'Navigation' button for turn-by-turn directions to passenger locations. Make sure location services are enabled on your device."
-    }
-    
-    if (lowerMessage.includes('earning') || lowerMessage.includes('payment') || lowerMessage.includes('money')) {
-      return "Earnings are calculated based on: 1) Base fare, 2) Distance traveled, 3) Time spent, and 4) Surge pricing. You receive 75% of the total fare. Payments are processed weekly to your registered bank account."
-    }
-    
-    if (lowerMessage.includes('report') || lowerMessage.includes('passenger') || lowerMessage.includes('issue')) {
-      return "To report a passenger issue: Go to ride details → Tap 'Report Issue' → Select issue type → Add details → Submit. Our team reviews reports within 24 hours."
-    }
-    
-    if (lowerMessage.includes('account') || lowerMessage.includes('profile') || lowerMessage.includes('vehicle')) {
-      return "For account help: Update your profile in Driver Settings. Vehicle info can be updated in 'My Vehicle' section. Contact driver-support@th-drive.com for account-specific issues."
-    }
-    
-    return "I'm here to help with TH-Drive driver support! For immediate assistance, please contact driver-support@th-drive.com or try one of the quick actions above."
+    setIsLoading(false)
   }
 
   return (
-    <Card className="mx-auto max-w-3xl shadow-lg shadow-primary/5 border-border/50">
-      <CardHeader className="border-b border-border pb-4">
+    <Card className="mx-auto max-w-3xl shadow-lg shadow-blue-500/5 border-blue-200">
+      <CardHeader className="border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white pb-4">
         <CardTitle className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/20">
-            <Sparkles className="h-5 w-5 text-blue-500" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600">
+            <Sparkles className="h-5 w-5 text-white" />
           </div>
           <div>
-            <span className="text-lg font-semibold">Driver Support Assistant</span>
-            <p className="text-sm font-normal text-muted-foreground">
-              Powered by AI • Available 24/7
-            </p>
+            <span className="text-lg font-bold text-gray-900">Driver Support Assistant</span>
+            <p className="text-sm font-normal text-gray-600">Powered by OpenRouter AI • Real-time assistance</p>
           </div>
         </CardTitle>
       </CardHeader>
@@ -348,7 +311,7 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
             <div className="flex h-full items-center justify-center">
               <div className="text-center">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
-                <p className="mt-2 text-sm text-muted-foreground">Loading chat history...</p>
+                <p className="mt-2 text-sm text-gray-500">Loading your conversation...</p>
               </div>
             </div>
           ) : messages.length === 0 ? (
@@ -357,15 +320,14 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
               animate={{ opacity: 1, y: 0 }}
               className="flex h-full flex-col items-center justify-center text-center px-4"
             >
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20">
-                <Bot className="h-8 w-8 text-blue-500" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600">
+                <Bot className="h-8 w-8 text-white" />
               </div>
-              <h3 className="mt-4 text-lg font-semibold">Driver Support Center</h3>
-              <p className="mt-2 text-sm text-muted-foreground max-w-md">
-                Need help with your driver account? I can assist with earnings, navigation, passenger issues, and more.
+              <h3 className="mt-4 text-lg font-bold text-gray-900">Welcome to Driver Support!</h3>
+              <p className="mt-2 text-sm text-gray-600 max-w-md">
+                How can I help with your driver account today?
               </p>
 
-              {/* Quick Actions */}
               <div className="mt-6 grid grid-cols-2 gap-3 w-full max-w-sm">
                 {quickActions.map((action, index) => (
                   <motion.button
@@ -374,10 +336,10 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
                     onClick={() => handleQuickAction(action.message)}
-                    className="flex flex-col items-center gap-2 rounded-xl border border-border bg-card p-4 text-center text-sm font-medium transition-all hover:bg-blue-50 hover:border-blue-200"
+                    className="flex flex-col items-center gap-2 rounded-xl border border-blue-200 bg-white p-4 text-center text-sm font-medium transition-all hover:bg-blue-50 hover:border-blue-300 hover:shadow-sm"
                   >
                     <action.icon className="h-5 w-5 text-blue-500" />
-                    <span>{action.label}</span>
+                    <span className="text-gray-700">{action.label}</span>
                   </motion.button>
                 ))}
               </div>
@@ -400,27 +362,27 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
                       }`}
                     >
                       <div
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
                           message.role === "user" 
-                            ? "bg-blue-600 text-white" 
-                            : "bg-blue-500/10 border border-blue-500/20"
+                            ? "bg-gradient-to-br from-blue-500 to-blue-600" 
+                            : "bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300"
                         }`}
                       >
                         {message.role === "user" ? (
-                          <User className="h-4 w-4" />
+                          <User className="h-4 w-4 text-white" />
                         ) : (
-                          <Bot className="h-4 w-4 text-blue-500" />
+                          <Bot className="h-4 w-4 text-gray-700" />
                         )}
                       </div>
                       <div
                         className={`rounded-2xl px-4 py-3 ${
                           message.role === "user" 
-                            ? "bg-blue-600 text-white" 
-                            : "bg-blue-50 border border-blue-100"
+                            ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white" 
+                            : "bg-gradient-to-r from-gray-50 to-white border border-gray-200 text-gray-800"
                         }`}
                       >
                         <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
-                        <p className="text-xs mt-1 opacity-70">
+                        <p className={`text-xs mt-2 ${message.role === "user" ? "text-blue-100" : "text-gray-500"}`}>
                           {message.role === "user" ? "You" : "Driver Assistant"}
                         </p>
                       </div>
@@ -436,16 +398,16 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
                   className="flex justify-start"
                 >
                   <div className="flex items-start gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/20">
-                      <Bot className="h-4 w-4 text-blue-500" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300">
+                      <Bot className="h-4 w-4 text-gray-700" />
                     </div>
-                    <div className="rounded-2xl bg-blue-50 border border-blue-100 px-4 py-3">
+                    <div className="rounded-2xl bg-gradient-to-r from-gray-50 to-white border border-gray-200 px-4 py-3">
                       <div className="flex items-center gap-1">
                         <div className="h-2 w-2 animate-bounce rounded-full bg-blue-400" />
                         <div className="h-2 w-2 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: "150ms" }} />
                         <div className="h-2 w-2 animate-bounce rounded-full bg-blue-400" style={{ animationDelay: "300ms" }} />
                       </div>
-                      <p className="text-xs mt-2 text-blue-600">Thinking...</p>
+                      <p className="text-xs mt-2 text-gray-600">Getting AI response from OpenRouter...</p>
                     </div>
                   </div>
                 </motion.div>
@@ -454,20 +416,19 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
           )}
         </ScrollArea>
 
-        {/* Input Area */}
-        <div className="border-t border-border p-4 bg-gradient-to-t from-white to-blue-50/50">
+        <div className="border-t border-gray-200 p-4 bg-gradient-to-t from-white to-gray-50">
           <form onSubmit={handleSubmit} className="flex gap-2">
             <Input
               placeholder="Ask about earnings, navigation, or passenger issues..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isLoading}
-              className="h-11 rounded-xl border-blue-200 focus:border-blue-400 focus:ring-blue-400"
+              className="h-11 rounded-xl border-gray-300 focus:border-blue-500 focus:ring-blue-500"
             />
             <Button
               type="submit"
               disabled={!input.trim() || isLoading}
-              className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/25"
+              className="h-11 px-6 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-500/25"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -476,9 +437,10 @@ export function DriverSupportChat({ userId }: DriverSupportChatProps) {
               )}
             </Button>
           </form>
-          <p className="mt-3 text-center text-xs text-muted-foreground">
-            Using OpenRouter AI • Response times may vary • Contact driver-support@th-drive.com for urgent issues
-          </p>
+          <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+            <span>Using OpenRouter AI • Model: {OPENROUTER_MODEL}</span>
+            <span>API Key: {OPENROUTER_API_KEY.substring(0, 8)}...</span>
+          </div>
         </div>
       </CardContent>
     </Card>
