@@ -30,12 +30,12 @@ export function UserSidebar({ user }: UserSidebarProps) {
   }
 
   const navItems = [
-    { href: "/dashboard", icon: MapPin, label: "Book Ride" },
-    { href: "/dashboard/ride-history", icon: Clock, label: "My Rides" },
-    { href: "/dashboard/payments", icon: CreditCard, label: "Payments" },
-    { href: "/dashboard/ratings", icon: Star, label: "Ratings" },
-    { href: "/dashboard/support", icon: MessageCircle, label: "Support" },
-  ]
+  { href: "/dashboard", icon: MapPin, label: "Dashboard" },
+  { href: "/dashboard/ride-history", icon: Clock, label: "My Rides" },
+  { href: "/dashboard/payments", icon: CreditCard, label: "Payments" },
+  { href: "/dashboard/ratings", icon: Star, label: "Ratings" },
+  { href: "/dashboard/support", icon: MessageCircle, label: "Support" },
+]
 
   return (
     <>
