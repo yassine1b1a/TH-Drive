@@ -58,14 +58,15 @@ interface RouteInfo {
 
 interface Driver {
   user_id: string
-  current_lat: number
-  current_lng: number
+  // Update these two lines to allow null
+  current_lat: number | null
+  current_lng: number | null
   vehicle_make: string
   vehicle_model: string
   vehicle_color: string
   vehicle_plate: string
   is_online: boolean
-  is_verified: boolean // <--- ADD THIS
+  is_verified: boolean
   profiles: {
     full_name: string
     rating: number
