@@ -14,10 +14,10 @@ export default async function DriverSettingsPage() {
     redirect("/auth/login")
   }
 
-  // Get ALL profile fields needed by DriverSettings
+  // Get ALL profile fields including updated_at
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, email, rating, role, phone, avatar_url, is_banned, ban_reason, warnings_count, total_rides, completed_rides, total_earnings, created_at")
+    .select("id, full_name, email, rating, role, phone, avatar_url, is_banned, ban_reason, warnings_count, total_rides, completed_rides, total_earnings, created_at, updated_at")
     .eq("id", user.id)
     .single()
 
