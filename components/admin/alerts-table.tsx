@@ -1,3 +1,4 @@
+// In dashboard/notification/page.tsx (the moderator page)
 "use client"
 
 import { useState } from "react"
@@ -17,7 +18,29 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { AlertTriangle, CheckCircle, Ban, Star } from "lucide-react"
-import type { ModerationAlert, Profile } from "@/lib/types"
+import { sendWarningNotification, sendBanNotification } from "@/lib/notifications"
+
+// Define types locally if not imported
+interface Profile {
+  id: string
+  full_name: string | null
+  email: string
+  rating: number
+  warnings_count: number
+  is_banned: boolean
+}
+
+interface ModerationAlert {
+  id: string
+  user_id: string
+  alert_type: string
+  description: string
+  status: string
+  reviewed_by: string | null
+  action_taken: string | null
+  created_at: string
+  reviewed_at: string | null
+}
 
 interface Alert extends ModerationAlert {
   user: Profile
@@ -46,6 +69,15 @@ export function AlertsTable({ alerts: initialAlerts, moderatorId }: AlertsTableP
     try {
       const supabase = createClient()
 
+      // Get moderator info
+      const { data: moderatorData } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", moderatorId)
+        .single()
+
+      const moderatorName = moderatorData?.full_name || "Moderator"
+
       // Update alert
       await supabase
         .from("moderation_alerts")
@@ -57,17 +89,39 @@ export function AlertsTable({ alerts: initialAlerts, moderatorId }: AlertsTableP
         })
         .eq("id", alert.id)
 
-      // Take action on user
+      // Take action on user and send notification
       if (action === "warn") {
         await supabase
           .from("profiles")
           .update({ warnings_count: alert.user.warnings_count + 1 })
           .eq("id", alert.user_id)
+
+        // Send warning notification to user
+        await sendWarningNotification(
+          alert.user_id,
+          actionTaken || `Low rating alert: ${alert.description}`,
+          moderatorName,
+          alert.id
+        )
       } else if (action === "ban") {
         await supabase
           .from("profiles")
-          .update({ is_banned: true, ban_reason: actionTaken || `Low rating alert: ${alert.description}` })
+          .update({ 
+            is_banned: true, 
+            ban_reason: actionTaken || `Low rating alert: ${alert.description}` 
+          })
           .eq("id", alert.user_id)
+
+        // Send ban notification to user
+        await sendBanNotification(
+          alert.user_id,
+          actionTaken || `Low rating alert: ${alert.description}`,
+          moderatorName,
+          alert.id
+        )
+      } else if (action === "dismiss") {
+        // Just update the alert status without sending notification
+        // Or send an info notification if desired
       }
 
       setAlerts(
