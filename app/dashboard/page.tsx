@@ -8,10 +8,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { MapPin, Clock, Star, MessageCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 
+interface Profile {
+  id: string
+  full_name: string | null
+  email: string
+  rating: number
+}
+
 export default function DashboardPage() {
   const [userId, setUserId] = useState<string>("")
   const [loading, setLoading] = useState(true)
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -23,7 +30,7 @@ export default function DashboardPage() {
         
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("*")
+          .select("id, full_name, email, rating")
           .eq("id", user.id)
           .single()
         
@@ -42,7 +49,7 @@ export default function DashboardPage() {
     )
   }
 
-  if (!userId) {
+  if (!userId || !profile) {
     return <div>Please log in to access dashboard</div>
   }
 
@@ -81,15 +88,16 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background">
       <UserSidebar
         user={{
-          full_name: profile?.full_name || "User",
-          email: profile?.email || "",
-          rating: profile?.rating || 5.0,
+          id: profile.id, // Add the id property here
+          full_name: profile.full_name || "User",
+          email: profile.email || "",
+          rating: profile.rating || 5.0,
         }}
       />
       <main className="p-4 md:ml-64 md:p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Welcome back, {profile?.full_name || "User"}!</p>
+          <p className="text-muted-foreground">Welcome back, {profile.full_name || "User"}!</p>
         </div>
 
         {/* Quick Actions */}
