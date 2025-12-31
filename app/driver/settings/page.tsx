@@ -3,18 +3,6 @@ import { createClient } from "@/lib/supabase/server"
 import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
 import { DriverSettings } from "@/components/driver/driver-settings"
 
-// Add Profile interface with id
-interface Profile {
-  id: string
-  full_name: string | null
-  email: string
-  rating: number | null
-  role?: string
-  // Add other profile fields if needed
-  phone?: string | null
-  avatar_url?: string | null
-}
-
 export default async function DriverSettingsPage() {
   const supabase = await createClient()
 
@@ -26,10 +14,10 @@ export default async function DriverSettingsPage() {
     redirect("/auth/login")
   }
 
-  // Update query to include id and any other needed fields
+  // Get ALL profile fields needed by DriverSettings
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, email, rating, role, phone, avatar_url")
+    .select("id, full_name, email, rating, role, phone, avatar_url, is_banned, ban_reason, warnings_count, total_rides, completed_rides, total_earnings, created_at")
     .eq("id", user.id)
     .single()
 
@@ -47,7 +35,7 @@ export default async function DriverSettingsPage() {
     <div className="min-h-screen bg-background">
       <DriverSidebar
         user={{
-          id: profile.id, // Add this line
+          id: profile.id,
           full_name: profile.full_name || "Driver",
           email: profile.email || "",
           rating: profile.rating || 5.0,
