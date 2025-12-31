@@ -32,14 +32,13 @@ export default async function AdminDriversPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AdminSidebar
-        user={{
-          id: profile.id, // ADD THIS
-          full_name: profile.full_name || "Admin",
-          email: profile.email || "",
-          role: profile.role,
-        }}
-      />
+       <AdminSidebar
+          user={{
+            full_name: profile.full_name || "Admin",
+            email: profile.email || "",
+            role: profile.role,
+          }}
+        />
       <main className="p-4 md:ml-64 md:p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Drivers</h1>
