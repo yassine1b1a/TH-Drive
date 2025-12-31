@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
-import NotificationsList from "@/components/notifications/list"
 
 export default async function DriverNotificationsPage() {
   const supabase = await createClient()
