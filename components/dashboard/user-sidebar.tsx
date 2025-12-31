@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 
 interface UserSidebarProps {
   user: {
+    id: string
     full_name: string | null
     email: string
     rating: number
@@ -109,8 +110,8 @@ export function UserSidebar({ user }: UserSidebarProps) {
         className="fixed left-4 top-4 z-50 md:hidden bg-card shadow-md"
         onClick={() => setIsOpen(!isOpen)}
       >
-        {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-      </Button>
+        {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />
+        </Button>
 
       {/* Overlay */}
       <AnimatePresence>
