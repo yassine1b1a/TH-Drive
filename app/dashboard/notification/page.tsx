@@ -1,5 +1,5 @@
 "use client"
-
+import { sendWarningNotification, sendBanNotification } from "@/lib/notifications"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -153,18 +153,87 @@ export default function NotificationsPage() {
     }
   }
 
-  const handleNotificationClick = async (notification: Notification) => {
-    if (!notification.is_read) {
-      await markAsRead([notification.id])
+  const handleReview = async (alert: Alert, action: "warn" | "ban" | "dismiss") => {
+  setIsProcessing(true)
+  try {
+    const supabase = createClient()
+
+    // Get moderator info
+    const { data: moderatorData } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", moderatorId)
+      .single()
+
+    const moderatorName = moderatorData?.full_name || "Moderator"
+
+    // Update alert
+    await supabase
+      .from("moderation_alerts")
+      .update({
+        status: "actioned",
+        reviewed_by: moderatorId,
+        reviewed_at: new Date().toISOString(),
+        action_taken: action,
+      })
+      .eq("id", alert.id)
+
+    // Take action on user and send notification
+    if (action === "warn") {
+      await supabase
+        .from("profiles")
+        .update({ warnings_count: alert.user.warnings_count + 1 })
+        .eq("id", alert.user_id)
+
+      // Send warning notification to user
+      await sendWarningNotification(
+        alert.user_id,
+        actionTaken || `Low rating alert: ${alert.description}`,
+        moderatorName,
+        alert.id
+      )
+    } else if (action === "ban") {
+      await supabase
+        .from("profiles")
+        .update({ 
+          is_banned: true, 
+          ban_reason: actionTaken || `Low rating alert: ${alert.description}` 
+        })
+        .eq("id", alert.user_id)
+
+      // Send ban notification to user
+      await sendBanNotification(
+        alert.user_id,
+        actionTaken || `Low rating alert: ${alert.description}`,
+        moderatorName,
+        alert.id
+      )
+    } else if (action === "dismiss") {
+      // Send dismissal notification if needed
+      await createNotification({
+        userId: alert.user_id,
+        title: "Alert Resolved",
+        message: "An alert regarding your account has been reviewed and dismissed.",
+        type: "info",
+        relatedType: "moderation_alert",
+        relatedId: alert.id
+      })
     }
 
-    // Handle navigation based on notification type
-    if (notification.related_type === "ride") {
-      router.push(`/dashboard/ride-history?ride=${notification.related_id}`)
-    } else if (notification.related_type === "moderation_alert") {
-      router.push(`/dashboard/support?alert=${notification.related_id}`)
-    }
+    setAlerts(
+      alerts.map((a) =>
+        a.id === alert.id ? { ...a, status: "actioned", reviewed_by: moderatorId, action_taken: action } : a,
+      ),
+    )
+    setIsActionDialogOpen(false)
+    setActionTaken("")
+  } catch (error) {
+    console.error("Error reviewing alert:", error)
+  } finally {
+    setIsProcessing(false)
   }
+}
+
 
   const getIcon = (type: Notification["type"]) => {
     switch (type) {
