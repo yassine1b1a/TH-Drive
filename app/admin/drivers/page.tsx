@@ -16,7 +16,7 @@ export default async function AdminDriversPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, email, role")
+    .select("full_name, email, role")
     .eq("id", user.id)
     .single()
 
@@ -24,6 +24,7 @@ export default async function AdminDriversPage() {
     redirect("/dashboard")
   }
 
+  // Fetch drivers with their details
   const { data: drivers } = await supabase
     .from("profiles")
     .select("*, driver_details(*)")
@@ -32,13 +33,13 @@ export default async function AdminDriversPage() {
 
   return (
     <div className="min-h-screen bg-background">
-       <AdminSidebar
-          user={{
-            full_name: profile.full_name || "Admin",
-            email: profile.email || "",
-            role: profile.role,
-          }}
-        />
+      <AdminSidebar
+        user={{
+          full_name: profile.full_name || "Admin",
+          email: profile.email || "",
+          role: profile.role,
+        }}
+      />
       <main className="p-4 md:ml-64 md:p-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Drivers</h1>
