@@ -60,10 +60,10 @@ export default function RatingsPage() {
 
       setUserId(user.id)
 
-      // Load profile
+      // Load profile - MAKE SURE TO INCLUDE ID IN THE SELECT
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("*")
+        .select("id, full_name, email, rating, role, total_rides")
         .eq("id", user.id)
         .single()
 
@@ -163,7 +163,7 @@ export default function RatingsPage() {
     )
   }
 
-  if (!userId) {
+  if (!userId || !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -180,6 +180,7 @@ export default function RatingsPage() {
     <div className="min-h-screen bg-background">
       <UserSidebar
         user={{
+          id: profile.id, // ADD THIS LINE - IT'S REQUIRED
           full_name: profile?.full_name || "User",
           email: profile?.email || "",
           rating: profile?.rating || 5.0,
