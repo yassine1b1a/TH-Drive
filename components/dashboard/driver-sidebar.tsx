@@ -98,7 +98,7 @@ export function DriverSidebar({ user, vehicle }: DriverSidebarProps) {
     { href: "/driver/history", icon: Clock, label: "Ride History" },
     { href: "/driver/earnings", icon: Star, label: "Earnings" },
     { 
-      href: "/dashboard/notifications", 
+      href: "/driver/notification", 
       icon: Bell, 
       label: "Notifications",
       badge: unreadCount > 0 ? unreadCount : undefined
