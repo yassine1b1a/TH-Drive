@@ -4,6 +4,15 @@ import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
 import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
 import RideHistory from "@/components/ride-history"
+import type { UserProfile } from "@/components/dashboard/driver-sidebar" // Import the type if available
+
+// Or define the interface locally
+interface UserProfile {
+  id: string
+  full_name: string
+  email: string
+  rating: number
+}
 
 export default function DriverHistoryPage() {
   const [userId, setUserId] = useState<string>("")
@@ -18,10 +27,10 @@ export default function DriverHistoryPage() {
       if (user) {
         setUserId(user.id)
         
-        // Get profile
+        // Get profile - include id in select
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("*")
+          .select("id, full_name, email, rating")
           .eq("id", user.id)
           .single()
         
@@ -43,23 +52,46 @@ export default function DriverHistoryPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">Loading...</div>
+      <div className="min-h-screen bg-background">
+        <DriverSidebar
+          user={{
+            id: "loading", // Add id for loading state
+            full_name: "Loading...",
+            email: "",
+            rating: 5.0,
+          }}
+          vehicle={{
+            make: "",
+            model: "",
+            color: "",
+            plate: "",
+          }}
+        />
+        <main className="p-4 md:ml-64 md:p-8">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">Loading...</div>
+          </div>
+        </main>
       </div>
     )
   }
 
-  if (!userId) {
-    return <div>Please log in to view your ride history</div>
+  if (!userId || !profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">Please log in to view your ride history</div>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-background">
       <DriverSidebar
         user={{
-          full_name: profile?.full_name || "Driver",
-          email: profile?.email || "",
-          rating: profile?.rating || 5.0,
+          id: profile.id, // Add this line - use actual profile id
+          full_name: profile.full_name || "Driver",
+          email: profile.email || "",
+          rating: profile.rating || 5.0,
         }}
         vehicle={{
           make: driverDetails?.vehicle_make || "",
