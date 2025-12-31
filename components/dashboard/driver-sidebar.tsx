@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Car, MapPin, Clock, Star, MessageCircle, LogOut, Menu, X, Settings } from "lucide-react"
+import { Car, MapPin, Clock, Star, MessageCircle,Bell, LogOut, Menu, X, Settings } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 
