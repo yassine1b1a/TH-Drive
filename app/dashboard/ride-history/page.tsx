@@ -5,9 +5,16 @@ import { createClient } from "@/lib/supabase/client"
 import RideHistory from "@/components/ride-history"
 import { UserSidebar } from "@/components/dashboard/user-sidebar"
 
+interface Profile {
+  id: string
+  full_name: string | null
+  email: string
+  rating: number | null
+}
+
 export default function UserRideHistoryPage() {
   const [userId, setUserId] = useState<string>("")
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -19,7 +26,7 @@ export default function UserRideHistoryPage() {
         
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("*")
+          .select("id, full_name, email, rating")
           .eq("id", user.id)
           .single()
         
@@ -35,6 +42,7 @@ export default function UserRideHistoryPage() {
       <div className="min-h-screen bg-background">
         <UserSidebar
           user={{
+            id: "loading", // Add a temporary id for loading state
             full_name: "Loading...",
             email: "",
             rating: 5.0,
@@ -51,7 +59,7 @@ export default function UserRideHistoryPage() {
     )
   }
 
-  if (!userId) {
+  if (!userId || !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div>Please log in to view your ride history</div>
@@ -63,9 +71,10 @@ export default function UserRideHistoryPage() {
     <div className="min-h-screen bg-background">
       <UserSidebar
         user={{
-          full_name: profile?.full_name || "User",
-          email: profile?.email || "",
-          rating: profile?.rating || 5.0,
+          id: profile.id, // Add the id property here
+          full_name: profile.full_name || "User",
+          email: profile.email || "",
+          rating: profile.rating || 5.0,
         }}
       />
       <main className="p-4 md:ml-64 md:p-8">
