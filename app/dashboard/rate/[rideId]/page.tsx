@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Star, Loader2, ArrowLeft, CheckCircle, AlertCircle, Car, User, Shield, MessageSquare } from 'lucide-react'
@@ -37,7 +38,7 @@ interface RideInfo {
 export default function RateRidePage() {
   const params = useParams()
   const router = useRouter()
-  const rideId = params.id as string
+  const rideId = params.rideId as string
   
   const [ride, setRide] = useState<RideInfo | null>(null)
   const [loading, setLoading] = useState(true)
