@@ -5,10 +5,17 @@ import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
 import { UserSidebar } from "@/components/dashboard/user-sidebar"
 
+interface Profile {
+  id: string
+  full_name: string | null
+  email: string
+  rating: number | null
+}
+
 export default function UserRidesPage() {
   const [userId, setUserId] = useState<string>("")
   const [loading, setLoading] = useState(true)
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
 
   useEffect(() => {
     const getUser = async () => {
@@ -17,10 +24,10 @@ export default function UserRidesPage() {
       if (user) {
         setUserId(user.id)
         
-        // Get profile
+        // Get profile - MAKE SURE TO SELECT ID
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("*")
+          .select("id, full_name, email, rating")
           .eq("id", user.id)
           .single()
         
@@ -33,20 +40,39 @@ export default function UserRidesPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">Loading...</div>
+      <div className="min-h-screen bg-background">
+        <UserSidebar
+          user={{
+            id: "loading", // Add temporary id for loading state
+            full_name: "Loading...",
+            email: "",
+            rating: 5.0,
+          }}
+        />
+        <main className="p-4 md:ml-64 md:p-8">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <p className="text-muted-foreground">Loading...</p>
+            </div>
+          </div>
+        </main>
       </div>
     )
   }
 
-  if (!userId) {
-    return <div>Please log in to view your ride history</div>
+  if (!userId || !profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div>Please log in to view your ride history</div>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-background">
       <UserSidebar
         user={{
+          id: profile.id, // ADD THIS REQUIRED PROPERTY
           full_name: profile?.full_name || "User",
           email: profile?.email || "",
           rating: profile?.rating || 5.0,
