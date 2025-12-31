@@ -18,6 +18,7 @@ import {
   AlertCircle,
   CheckCircle,
   MessageSquareWarning,
+  LucideIcon,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -34,6 +35,21 @@ interface Notification {
   related_type?: string
   related_id?: string
   metadata?: Record<string, any>
+}
+
+// Define getIcon function outside so it can be reused
+const getIcon = (type: Notification["type"]): JSX.Element => {
+  switch (type) {
+    case "warning":
+      return <AlertTriangle className="h-5 w-5 text-yellow-500" />
+    case "alert":
+      return <AlertCircle className="h-5 w-5 text-red-500" />
+    case "success":
+      return <CheckCircle className="h-5 w-5 text-green-500" />
+    case "info":
+    default:
+      return <Info className="h-5 w-5 text-blue-500" />
+  }
 }
 
 export default function NotificationsPage() {
@@ -62,6 +78,19 @@ export default function NotificationsPage() {
           setNotifications(prev => [newNotification, ...prev])
           if (!newNotification.is_read) {
             setUnreadCount(prev => prev + 1)
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+        },
+        (payload) => {
+          if (payload.new.is_read && !payload.old.is_read) {
+            setUnreadCount(prev => Math.max(0, prev - 1))
           }
         }
       )
@@ -171,20 +200,6 @@ export default function NotificationsPage() {
     }
   }
 
-  const getIcon = (type: Notification["type"]) => {
-    switch (type) {
-      case "warning":
-        return <AlertTriangle className="h-5 w-5 text-yellow-500" />
-      case "alert":
-        return <AlertCircle className="h-5 w-5 text-red-500" />
-      case "success":
-        return <CheckCircle className="h-5 w-5 text-green-500" />
-      case "info":
-      default:
-        return <Info className="h-5 w-5 text-blue-500" />
-    }
-  }
-
   if (loading) {
     return (
       <div className="space-y-4">
@@ -267,6 +282,7 @@ export default function NotificationsPage() {
             selectedNotifications={selectedNotifications}
             onSelect={setSelectedNotifications}
             onClick={handleNotificationClick}
+            getIcon={getIcon}
           />
         </TabsContent>
 
@@ -276,6 +292,7 @@ export default function NotificationsPage() {
             selectedNotifications={selectedNotifications}
             onSelect={setSelectedNotifications}
             onClick={handleNotificationClick}
+            getIcon={getIcon}
           />
         </TabsContent>
 
@@ -285,6 +302,7 @@ export default function NotificationsPage() {
             selectedNotifications={selectedNotifications}
             onSelect={setSelectedNotifications}
             onClick={handleNotificationClick}
+            getIcon={getIcon}
           />
         </TabsContent>
       </Tabs>
@@ -297,6 +315,7 @@ interface NotificationListProps {
   selectedNotifications: string[]
   onSelect: (ids: string[]) => void
   onClick: (notification: Notification) => void
+  getIcon: (type: Notification["type"]) => JSX.Element
 }
 
 function NotificationList({
@@ -304,6 +323,7 @@ function NotificationList({
   selectedNotifications,
   onSelect,
   onClick,
+  getIcon,
 }: NotificationListProps) {
   if (notifications.length === 0) {
     return (
