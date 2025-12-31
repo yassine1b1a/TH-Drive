@@ -93,7 +93,7 @@ export function UserSidebar({ user }: UserSidebarProps) {
     { href: "/dashboard/payments", icon: CreditCard, label: "Payments" },
     { href: "/dashboard/ratings", icon: Star, label: "Ratings" },
     { 
-      href: "/dashboard/notifications", 
+      href: "/dashboard/notification", 
       icon: Bell, 
       label: "Notifications",
       badge: unreadCount > 0 ? unreadCount : undefined
