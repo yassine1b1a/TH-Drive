@@ -4,11 +4,12 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Star, Loader2, ArrowLeft, CheckCircle, AlertCircle, Car, User, Shield, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+
 interface RideInfo {
   id: string
   user_id: string
@@ -37,7 +38,7 @@ interface RideInfo {
 export default function RateRidePage() {
   const params = useParams()
   const router = useRouter()
-  const rideId = params.id as string
+  const rideId = params.rideId as string
   
   const [ride, setRide] = useState<RideInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -100,9 +101,12 @@ export default function RateRidePage() {
         .single()
 
       if (rideError) {
+        console.error('Ride fetch error:', rideError)
         setError('Ride not found')
         return
       }
+
+      console.log('Ride data loaded:', rideData)
 
       // Check if ride is completed
       if (rideData.status !== 'completed') {
@@ -113,6 +117,8 @@ export default function RateRidePage() {
       // Determine user role and who they should rate
       const isUser = rideData.user_id === user.id
       const isDriver = rideData.driver_id === user.id
+      
+      console.log('User role check:', { isUser, isDriver, userId: user.id, rideUserId: rideData.user_id, rideDriverId: rideData.driver_id })
       
       if (!isUser && !isDriver) {
         setError('You are not authorized to rate this ride')
@@ -137,6 +143,7 @@ export default function RateRidePage() {
         }
       }
 
+      console.log('Person to rate:', personToRate)
       setPersonToRate(personToRate)
 
       // Check if user has already rated this person for this ride
@@ -144,6 +151,8 @@ export default function RateRidePage() {
         const hasAlreadyRated = rideData.ratings?.some(
           r => r.rater_id === user.id && r.rated_id === personToRate.id
         )
+        
+        console.log('Already rated check:', { hasAlreadyRated, ratings: rideData.ratings })
         
         if (hasAlreadyRated) {
           setError('You have already rated this person for this ride')
@@ -161,7 +170,10 @@ export default function RateRidePage() {
   }
 
   const handleSubmitRating = async () => {
+    console.log('Submit rating clicked:', { rating, comment, personToRate, currentUserId, rideId })
+    
     if (!ride || !rating || !personToRate || !currentUserId) {
+      console.error('Missing data:', { ride, rating, personToRate, currentUserId })
       toast.error('Please select a rating')
       return
     }
@@ -170,8 +182,16 @@ export default function RateRidePage() {
     try {
       const supabase = createClient()
 
+      console.log('Submitting rating with data:', {
+        ride_id: rideId,
+        rater_id: currentUserId,
+        rated_id: personToRate.id,
+        rating: rating,
+        comment: comment.trim() || null
+      })
+
       // Submit rating
-      const { error: ratingError } = await supabase
+      const { data, error: ratingError } = await supabase
         .from('ratings')
         .insert({
           ride_id: rideId,
@@ -180,10 +200,17 @@ export default function RateRidePage() {
           rating: rating,
           comment: comment.trim() || null
         })
+        .select()
+        .single()
+
+      console.log('Rating submission result:', { data, ratingError })
 
       if (ratingError) {
+        console.error('Rating error details:', ratingError)
         if (ratingError.code === '23505') { // Unique violation
           toast.error('You have already rated this person for this ride')
+        } else if (ratingError.message.includes('foreign key constraint')) {
+          toast.error('Unable to submit rating. Please try again or contact support.')
         } else {
           throw ratingError
         }
@@ -197,9 +224,9 @@ export default function RateRidePage() {
         router.push('/ride-history')
       }, 2000)
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting rating:', error)
-      toast.error('Failed to submit rating')
+      toast.error(error.message || 'Failed to submit rating')
     } finally {
       setSubmitting(false)
     }
@@ -262,6 +289,16 @@ export default function RateRidePage() {
           </CardHeader>
 
           <CardContent className="space-y-6">
+            {/* Debug info - remove in production */}
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800 hidden">
+              <p>Debug info:</p>
+              <p>Ride ID: {rideId}</p>
+              <p>User Role: {userRole}</p>
+              <p>Current User ID: {currentUserId}</p>
+              <p>Person to Rate: {personToRate?.name} ({personToRate?.id})</p>
+              <p>Rating: {rating}</p>
+            </div>
+
             {/* Ride Details */}
             <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
               <div className="flex items-center justify-between">
@@ -439,7 +476,7 @@ export default function RateRidePage() {
           <CardFooter className="flex flex-col gap-3">
             <Button
               onClick={handleSubmitRating}
-              disabled={submitting || !rating}
+              disabled={submitting || !rating || !personToRate}
               className="w-full"
               size="lg"
             >
