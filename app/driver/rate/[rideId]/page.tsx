@@ -3,6 +3,15 @@ import { createClient } from "@/lib/supabase/server"
 import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
 import { RateUser } from "@/components/driver/rate-user"
 
+// Add Profile interface with id
+interface Profile {
+  id: string
+  full_name: string | null
+  email: string
+  rating: number | null
+  role?: string
+}
+
 export default async function RateUserPage({ params }: { params: Promise<{ rideId: string }> }) {
   const { rideId } = await params
   const supabase = await createClient()
@@ -15,13 +24,22 @@ export default async function RateUserPage({ params }: { params: Promise<{ rideI
     redirect("/auth/login")
   }
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+  // Update query to include id
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, rating, role")
+    .eq("id", user.id)
+    .single()
 
   if (!profile || profile.role !== "driver") {
     redirect("/dashboard")
   }
 
-  const { data: driverDetails } = await supabase.from("driver_details").select("*").eq("user_id", user.id).single()
+  const { data: driverDetails } = await supabase
+    .from("driver_details")
+    .select("*")
+    .eq("user_id", user.id)
+    .single()
 
   const { data: ride } = await supabase
     .from("rides")
@@ -37,9 +55,10 @@ export default async function RateUserPage({ params }: { params: Promise<{ rideI
     <div className="min-h-screen bg-background">
       <DriverSidebar
         user={{
-          full_name: profile.full_name,
-          email: profile.email,
-          rating: profile.rating,
+          id: profile.id, // Add this
+          full_name: profile.full_name || "Driver",
+          email: profile.email || "",
+          rating: profile.rating || 5.0,
         }}
         vehicle={
           driverDetails
