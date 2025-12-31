@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
-import SupportForm from "@/components/dashboard/support-form"
 
 export default async function DriverSupportPage() {
   const supabase = await createClient()
@@ -14,7 +13,6 @@ export default async function DriverSupportPage() {
     redirect("/auth/login")
   }
 
-  // Get profile with id
   const { data: profile } = await supabase
     .from("profiles")
     .select("id, full_name, email, rating, role")
@@ -35,7 +33,7 @@ export default async function DriverSupportPage() {
     <div className="min-h-screen bg-background">
       <DriverSidebar
         user={{
-          id: profile.id, // Add this
+          id: profile.id,
           full_name: profile.full_name || "Driver",
           email: profile.email || "",
           rating: profile.rating || 5.0,
@@ -56,7 +54,16 @@ export default async function DriverSupportPage() {
           <h1 className="text-3xl font-bold">Support</h1>
           <p className="text-muted-foreground">Get help with your account or rides</p>
         </div>
-        <SupportForm />
+        <div className="max-w-2xl space-y-6">
+          <div className="rounded-lg border p-6">
+            <h3 className="mb-4 text-lg font-semibold">Contact Support</h3>
+            <p className="text-muted-foreground">Email: support@th-drive.com</p>
+            <p className="text-muted-foreground">Phone: 1-800-TH-DRIVE</p>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Our support team is available 24/7 to assist you with any issues.
+            </p>
+          </div>
+        </div>
       </main>
     </div>
   )
