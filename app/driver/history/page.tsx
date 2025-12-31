@@ -4,7 +4,6 @@ import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
 import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
 import RideHistory from "@/components/ride-history"
-import type { UserProfile } from "@/components/dashboard/driver-sidebar" // Import the type if available
 
 // Or define the interface locally
 interface UserProfile {
