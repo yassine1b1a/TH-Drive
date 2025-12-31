@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import { Checkbox } from "@/components/ui/checkbox"
 import { formatDistanceToNow } from "date-fns"
 import {
@@ -17,8 +16,6 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle,
-  MessageSquareWarning,
-  LucideIcon,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -38,7 +35,7 @@ interface Notification {
 }
 
 // Define getIcon function outside so it can be reused
-const getIcon = (type: Notification["type"]): JSX.Element => {
+const getIcon = (type: Notification["type"]) => {
   switch (type) {
     case "warning":
       return <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -104,7 +101,10 @@ export default function NotificationsPage() {
   const fetchNotifications = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        setLoading(false)
+        return
+      }
 
       const { data, error } = await supabase
         .from("notifications")
@@ -191,11 +191,11 @@ export default function NotificationsPage() {
     }
 
     // Handle navigation based on notification type
-    if (notification.related_type === "ride") {
+    if (notification.related_type === "ride" && notification.related_id) {
       router.push(`/dashboard/ride-history?ride=${notification.related_id}`)
-    } else if (notification.related_type === "moderation_alert") {
+    } else if (notification.related_type === "moderation_alert" && notification.related_id) {
       router.push(`/dashboard/support?alert=${notification.related_id}`)
-    } else if (notification.related_type === "violation") {
+    } else if (notification.related_type === "violation" && notification.related_id) {
       router.push(`/dashboard/support?violation=${notification.related_id}`)
     }
   }
@@ -282,7 +282,6 @@ export default function NotificationsPage() {
             selectedNotifications={selectedNotifications}
             onSelect={setSelectedNotifications}
             onClick={handleNotificationClick}
-            getIcon={getIcon}
           />
         </TabsContent>
 
@@ -292,7 +291,6 @@ export default function NotificationsPage() {
             selectedNotifications={selectedNotifications}
             onSelect={setSelectedNotifications}
             onClick={handleNotificationClick}
-            getIcon={getIcon}
           />
         </TabsContent>
 
@@ -302,7 +300,6 @@ export default function NotificationsPage() {
             selectedNotifications={selectedNotifications}
             onSelect={setSelectedNotifications}
             onClick={handleNotificationClick}
-            getIcon={getIcon}
           />
         </TabsContent>
       </Tabs>
@@ -315,7 +312,6 @@ interface NotificationListProps {
   selectedNotifications: string[]
   onSelect: (ids: string[]) => void
   onClick: (notification: Notification) => void
-  getIcon: (type: Notification["type"]) => JSX.Element
 }
 
 function NotificationList({
@@ -323,7 +319,6 @@ function NotificationList({
   selectedNotifications,
   onSelect,
   onClick,
-  getIcon,
 }: NotificationListProps) {
   if (notifications.length === 0) {
     return (
@@ -380,11 +375,9 @@ function NotificationList({
                 <p className="mt-2 text-sm text-muted-foreground">
                   {notification.message}
                 </p>
-                {notification.metadata && (
+                {notification.metadata && notification.metadata.reason && (
                   <div className="mt-2 text-xs text-muted-foreground">
-                    {notification.metadata.reason && (
-                      <p>Reason: {notification.metadata.reason}</p>
-                    )}
+                    <p>Reason: {notification.metadata.reason}</p>
                   </div>
                 )}
               </div>
