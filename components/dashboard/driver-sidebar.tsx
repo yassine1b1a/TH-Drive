@@ -5,12 +5,14 @@ import { usePathname } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Car, MapPin, Clock, Star, MessageCircle,Bell, LogOut, Menu, X, Settings } from "lucide-react"
-import { useState } from "react"
+import { Car, MapPin, Clock, Star, MessageCircle, Bell, LogOut, Menu, X, Settings } from "lucide-react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 
 interface DriverSidebarProps {
   user: {
+    id: string  // ADD THIS - ID is required for notifications
     full_name: string | null
     email: string
     rating: number
@@ -27,6 +29,62 @@ export function DriverSidebar({ user, vehicle }: DriverSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const supabase = createClient()
+
+  useEffect(() => {
+    fetchUnreadCount()
+    
+    // Subscribe to notifications
+    const channel = supabase
+      .channel('driver-sidebar-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => {
+          setUnreadCount(prev => prev + 1)
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          if (payload.new.is_read && !payload.old.is_read) {
+            setUnreadCount(prev => Math.max(0, prev - 1))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [user.id])
+
+  const fetchUnreadCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false)
+
+      if (error) throw error
+      setUnreadCount(count || 0)
+    } catch (error) {
+      console.error("Error fetching unread count:", error)
+    }
+  }
 
   const handleSignOut = async () => {
     const supabase = createClient()
@@ -101,29 +159,51 @@ export function DriverSidebar({ user, vehicle }: DriverSidebarProps) {
         {/* Navigation */}
         <nav className="flex-1 p-4">
           <ul className="space-y-2">
-            {navItems.map((item) => (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={() => setIsOpen(false)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 transition-colors",
-                    pathname === item.href
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  {item.label}
-                </Link>
-              </li>
-            ))}
+            {navItems.map((item) => {
+              const isActive = pathname === item.href
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={() => setIsOpen(false)}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-3 py-2 transition-colors group",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <item.icon className="h-5 w-5" />
+                      {item.label}
+                    </div>
+                    {item.badge && (
+                      <Badge 
+                        variant="default" 
+                        className={cn(
+                          "h-5 w-5 min-w-5 p-0 flex items-center justify-center text-xs",
+                          isActive 
+                            ? "bg-primary-foreground text-primary" 
+                            : "bg-primary text-primary-foreground"
+                        )}
+                      >
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </Badge>
+                    )}
+                  </Link>
+                </li>
+              )
+            })}
           </ul>
         </nav>
 
         {/* Sign out */}
         <div className="border-t border-border p-4">
-          <Button variant="ghost" className="w-full justify-start gap-3 text-muted-foreground" onClick={handleSignOut}>
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10" 
+            onClick={handleSignOut}
+          >
             <LogOut className="h-5 w-5" />
             Sign Out
           </Button>
