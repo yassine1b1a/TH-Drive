@@ -4,6 +4,15 @@ import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DollarSign, TrendingUp, Car, Calendar } from "lucide-react"
 
+// Add the interface for Profile with id
+interface Profile {
+  id: string
+  full_name: string | null
+  email: string
+  rating: number | null
+  role?: string
+}
+
 export default async function EarningsPage() {
   const supabase = await createClient()
 
@@ -15,13 +24,22 @@ export default async function EarningsPage() {
     redirect("/auth/login")
   }
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+  // Update query to include id
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, rating, role")
+    .eq("id", user.id)
+    .single()
 
   if (!profile || profile.role !== "driver") {
     redirect("/dashboard")
   }
 
-  const { data: driverDetails } = await supabase.from("driver_details").select("*").eq("user_id", user.id).single()
+  const { data: driverDetails } = await supabase
+    .from("driver_details")
+    .select("*")
+    .eq("user_id", user.id)
+    .single()
 
   // Get completed rides
   const { data: rides } = await supabase
@@ -44,9 +62,10 @@ export default async function EarningsPage() {
     <div className="min-h-screen bg-background">
       <DriverSidebar
         user={{
-          full_name: profile.full_name,
-          email: profile.email,
-          rating: profile.rating,
+          id: profile.id, // Add this line
+          full_name: profile.full_name || "Driver",
+          email: profile.email || "",
+          rating: profile.rating || 5.0,
         }}
         vehicle={
           driverDetails
