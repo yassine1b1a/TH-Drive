@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Car, MapPin, Clock, Star, MessageCircle, LogOut, Menu, X, CreditCard } from "lucide-react"
-import { useState } from "react"
+import { Car, MapPin, Clock, Star, MessageCircle, LogOut, Menu, X, CreditCard, Bell } from "lucide-react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
+import { Badge } from "@/components/ui/badge"
 
 interface UserSidebarProps {
   user: {
@@ -22,6 +23,62 @@ export function UserSidebar({ user }: UserSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const supabase = createClient()
+
+  useEffect(() => {
+    fetchUnreadCount()
+    
+    // Subscribe to notifications
+    const channel = supabase
+      .channel('sidebar-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => {
+          setUnreadCount(prev => prev + 1)
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          if (payload.new.is_read && !payload.old.is_read) {
+            setUnreadCount(prev => Math.max(0, prev - 1))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [user.id])
+
+  const fetchUnreadCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false)
+
+      if (error) throw error
+      setUnreadCount(count || 0)
+    } catch (error) {
+      console.error("Error fetching unread count:", error)
+    }
+  }
 
   const handleSignOut = async () => {
     const supabase = createClient()
@@ -30,12 +87,18 @@ export function UserSidebar({ user }: UserSidebarProps) {
   }
 
   const navItems = [
-  { href: "/dashboard", icon: MapPin, label: "Dashboard" },
-  { href: "/dashboard/ride-history", icon: Clock, label: "My Rides" },
-  { href: "/dashboard/payments", icon: CreditCard, label: "Payments" },
-  { href: "/dashboard/ratings", icon: Star, label: "Ratings" },
-  { href: "/dashboard/support", icon: MessageCircle, label: "Support" },
-]
+    { href: "/dashboard", icon: MapPin, label: "Dashboard" },
+    { href: "/dashboard/ride-history", icon: Clock, label: "My Rides" },
+    { href: "/dashboard/payments", icon: CreditCard, label: "Payments" },
+    { href: "/dashboard/ratings", icon: Star, label: "Ratings" },
+    { 
+      href: "/dashboard/notifications", 
+      icon: Bell, 
+      label: "Notifications",
+      badge: unreadCount > 0 ? unreadCount : undefined
+    },
+    { href: "/dashboard/support", icon: MessageCircle, label: "Support" },
+  ]
 
   return (
     <>
@@ -105,14 +168,29 @@ export function UserSidebar({ user }: UserSidebarProps) {
                     href={item.href}
                     onClick={() => setIsOpen(false)}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl px-3 py-2.5 font-medium transition-all",
+                      "flex items-center justify-between rounded-xl px-3 py-2.5 font-medium transition-all group",
                       isActive
                         ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
-                    <item.icon className="h-5 w-5" />
-                    {item.label}
+                    <div className="flex items-center gap-3">
+                      <item.icon className="h-5 w-5" />
+                      {item.label}
+                    </div>
+                    {item.badge && (
+                      <Badge 
+                        variant="default" 
+                        className={cn(
+                          "h-5 w-5 min-w-5 p-0 flex items-center justify-center text-xs",
+                          isActive 
+                            ? "bg-primary-foreground text-primary" 
+                            : "bg-primary text-primary-foreground"
+                        )}
+                      >
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </Badge>
+                    )}
                   </Link>
                 </li>
               )
