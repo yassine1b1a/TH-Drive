@@ -486,7 +486,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))}
-                  <Button variant="outline" className="w-full" onClick={() => router.push("/dashboard/notifications")}>
+                  <Button variant="outline" className="w-full" onClick={() => router.push("/dashboard/notification")}>
                     View All Notifications
                   </Button>
                 </div>
