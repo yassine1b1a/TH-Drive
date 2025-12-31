@@ -49,28 +49,51 @@ export default function RateRidePage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<'user' | 'driver' | null>(null)
   const [personToRate, setPersonToRate] = useState<{ id: string; name: string; role: 'user' | 'driver' } | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string>('')
 
   useEffect(() => {
-    if (rideId) {
+    console.log('RateRidePage mounted, rideId:', rideId)
+    if (rideId && rideId !== 'undefined') {
       loadRideInfo()
+    } else {
+      setError('Invalid ride ID')
+      setLoading(false)
     }
   }, [rideId])
 
   const loadRideInfo = async () => {
+    console.log('Starting loadRideInfo for rideId:', rideId)
+    setLoading(true)
+    setError(null)
+    
     try {
       const supabase = createClient()
+      console.log('Supabase client created')
       
       // Get current user
+      console.log('Getting current user...')
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError) throw userError
+      console.log('User data:', user, 'Error:', userError)
+      
+      if (userError) {
+        console.error('Error getting user:', userError)
+        setDebugInfo(`User error: ${userError.message}`)
+        throw userError
+      }
+      
       if (!user) {
+        console.log('No user found, redirecting to login')
+        setDebugInfo('No user found')
         router.push('/login')
         return
       }
 
+      console.log('Current user ID:', user.id)
       setCurrentUserId(user.id)
+      setDebugInfo(`User ID: ${user.id}`)
 
       // Fetch ride details
+      console.log('Fetching ride details...')
       const { data: rideData, error: rideError } = await supabase
         .from('rides')
         .select(`
@@ -100,17 +123,37 @@ export default function RateRidePage() {
         .eq('id', rideId)
         .single()
 
+      console.log('Ride data response:', rideData)
+      console.log('Ride error:', rideError)
+
       if (rideError) {
-        console.error('Ride fetch error:', rideError)
-        setError('Ride not found')
+        console.error('Error fetching ride:', rideError)
+        setDebugInfo(`Ride fetch error: ${rideError.message}`)
+        if (rideError.code === 'PGRST116') {
+          setError('Ride not found. Please check the ride ID.')
+        } else {
+          setError(`Failed to load ride: ${rideError.message}`)
+        }
         return
       }
 
-      console.log('Ride data loaded:', rideData)
+      if (!rideData) {
+        setError('No ride data found')
+        setDebugInfo('rideData is null')
+        return
+      }
+
+      console.log('Ride loaded:', {
+        id: rideData.id,
+        user_id: rideData.user_id,
+        driver_id: rideData.driver_id,
+        status: rideData.status
+      })
 
       // Check if ride is completed
       if (rideData.status !== 'completed') {
-        setError('You can only rate completed rides')
+        setError(`You can only rate completed rides. Current status: ${rideData.status}`)
+        setDebugInfo(`Ride status: ${rideData.status}`)
         return
       }
 
@@ -118,14 +161,23 @@ export default function RateRidePage() {
       const isUser = rideData.user_id === user.id
       const isDriver = rideData.driver_id === user.id
       
-      console.log('User role check:', { isUser, isDriver, userId: user.id, rideUserId: rideData.user_id, rideDriverId: rideData.driver_id })
-      
+      console.log('Role check:', { 
+        isUser, 
+        isDriver, 
+        rideUserId: rideData.user_id, 
+        rideDriverId: rideData.driver_id,
+        currentUserId: user.id 
+      })
+
       if (!isUser && !isDriver) {
         setError('You are not authorized to rate this ride')
+        setDebugInfo(`User ${user.id} is not associated with ride ${rideId}`)
         return
       }
 
-      setUserRole(isUser ? 'user' : 'driver')
+      const role = isUser ? 'user' : 'driver'
+      setUserRole(role)
+      console.log('User role determined:', role)
 
       // Determine who the user should rate
       let personToRate = null
@@ -135,24 +187,36 @@ export default function RateRidePage() {
           name: rideData.driver[0].full_name || 'Driver',
           role: 'driver' as const
         }
+        console.log('User rating driver:', personToRate)
       } else if (isDriver && rideData.user?.[0]) {
         personToRate = {
           id: rideData.user[0].id,
           name: rideData.user[0].full_name || 'Passenger',
           role: 'user' as const
         }
+        console.log('Driver rating user:', personToRate)
+      } else {
+        console.log('No person to rate found:', { 
+          isUser, 
+          isDriver, 
+          driverExists: rideData.driver?.[0], 
+          userExists: rideData.user?.[0] 
+        })
       }
 
-      console.log('Person to rate:', personToRate)
       setPersonToRate(personToRate)
 
       // Check if user has already rated this person for this ride
-      if (personToRate) {
-        const hasAlreadyRated = rideData.ratings?.some(
-          r => r.rater_id === user.id && r.rated_id === personToRate.id
+      if (personToRate && rideData.ratings) {
+        const hasAlreadyRated = rideData.ratings.some(
+          (r: any) => r.rater_id === user.id && r.rated_id === personToRate.id
         )
         
-        console.log('Already rated check:', { hasAlreadyRated, ratings: rideData.ratings })
+        console.log('Already rated check:', { 
+          hasAlreadyRated, 
+          ratingsCount: rideData.ratings?.length,
+          ratings: rideData.ratings
+        })
         
         if (hasAlreadyRated) {
           setError('You have already rated this person for this ride')
@@ -161,10 +225,14 @@ export default function RateRidePage() {
       }
 
       setRide(rideData as RideInfo)
-    } catch (error) {
-      console.error('Error loading ride:', error)
-      setError('Failed to load ride information')
+      console.log('Ride successfully loaded and set')
+      
+    } catch (error: any) {
+      console.error('Error in loadRideInfo:', error)
+      setError(`Failed to load ride information: ${error?.message || 'Unknown error'}`)
+      setDebugInfo(`Catch error: ${error?.message}`)
     } finally {
+      console.log('Setting loading to false')
       setLoading(false)
     }
   }
@@ -232,12 +300,29 @@ export default function RateRidePage() {
     }
   }
 
+  const handleRetry = () => {
+    console.log('Retrying load...')
+    setLoading(true)
+    setError(null)
+    loadRideInfo()
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
           <p className="mt-2 text-muted-foreground">Loading ride information...</p>
+          <p className="text-xs text-muted-foreground mt-2">Ride ID: {rideId}</p>
+          <Button 
+            variant="outline" 
+            onClick={handleRetry}
+            className="mt-4"
+            size="sm"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Retry
+          </Button>
         </div>
       </div>
     )
@@ -254,8 +339,29 @@ export default function RateRidePage() {
             </CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
-          <CardFooter>
-            <Button onClick={() => router.push('/ride-history')} className="w-full">
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Ride ID: {rideId}
+              </p>
+              {debugInfo && (
+                <div className="p-3 bg-muted rounded text-xs font-mono overflow-auto">
+                  <p className="font-semibold mb-1">Debug Info:</p>
+                  <p>{debugInfo}</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-3">
+            <Button onClick={handleRetry} className="w-full">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Try Again
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => router.push('/ride-history')} 
+              className="w-full"
+            >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Ride History
             </Button>
@@ -289,9 +395,9 @@ export default function RateRidePage() {
           </CardHeader>
 
           <CardContent className="space-y-6">
-            {/* Debug info - remove in production */}
-            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800 hidden">
-              <p>Debug info:</p>
+            {/* Debug info - visible for debugging */}
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+              <p className="font-semibold">Debug Info:</p>
               <p>Ride ID: {rideId}</p>
               <p>User Role: {userRole}</p>
               <p>Current User ID: {currentUserId}</p>
