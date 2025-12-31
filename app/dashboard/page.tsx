@@ -18,6 +18,7 @@ interface Profile {
   total_rides: number
   warnings_count: number
   is_banned: boolean
+  ban_reason: string | null  // ADD THIS LINE
 }
 
 interface Ride {
@@ -63,10 +64,10 @@ export default function DashboardPage() {
 
       setUserId(user.id)
 
-      // Fetch profile with id
+      // Fetch profile with id and ban_reason
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("id, full_name, email, rating, role, total_rides, warnings_count, is_banned")
+        .select("id, full_name, email, rating, role, total_rides, warnings_count, is_banned, ban_reason")
         .eq("id", user.id)
         .single()
       
@@ -262,7 +263,7 @@ export default function DashboardPage() {
                 </>
               ) : (
                 <>
-                  <User className="h-3 w-3" />
+                  <Users className="h-3 w-3" />
                   Passenger
                 </>
               )}
