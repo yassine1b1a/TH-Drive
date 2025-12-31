@@ -3,6 +3,15 @@ import { createClient } from "@/lib/supabase/server"
 import { DriverSidebar } from "@/components/dashboard/driver-sidebar"
 import { ActiveRide } from "@/components/driver/active-ride"
 
+// Update the interface to include id
+interface Profile {
+  id: string
+  full_name: string | null
+  email: string
+  rating: number | null
+  role?: string
+}
+
 export default async function ActiveRidePage() {
   const supabase = await createClient()
 
@@ -14,21 +23,31 @@ export default async function ActiveRidePage() {
     redirect("/auth/login")
   }
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+  // Update query to include id in select
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, rating, role")
+    .eq("id", user.id)
+    .single()
 
   if (!profile || profile.role !== "driver") {
     redirect("/dashboard")
   }
 
-  const { data: driverDetails } = await supabase.from("driver_details").select("*").eq("user_id", user.id).single()
+  const { data: driverDetails } = await supabase
+    .from("driver_details")
+    .select("*")
+    .eq("user_id", user.id)
+    .single()
 
   return (
     <div className="min-h-screen bg-background">
       <DriverSidebar
         user={{
-          full_name: profile.full_name,
-          email: profile.email,
-          rating: profile.rating,
+          id: profile.id, // Add the id property
+          full_name: profile.full_name || "Driver",
+          email: profile.email || "",
+          rating: profile.rating || 5.0,
         }}
         vehicle={
           driverDetails
