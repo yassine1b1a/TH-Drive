@@ -14,7 +14,11 @@ export default async function AdminDriversPage() {
     redirect("/auth/login")
   }
 
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, role")
+    .eq("id", user.id)
+    .single()
 
   if (!profile || !["admin", "moderator"].includes(profile.role)) {
     redirect("/dashboard")
@@ -30,8 +34,9 @@ export default async function AdminDriversPage() {
     <div className="min-h-screen bg-background">
       <AdminSidebar
         user={{
-          full_name: profile.full_name,
-          email: profile.email,
+          id: profile.id, // ADD THIS
+          full_name: profile.full_name || "Admin",
+          email: profile.email || "",
           role: profile.role,
         }}
       />
