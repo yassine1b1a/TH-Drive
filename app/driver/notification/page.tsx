@@ -19,9 +19,8 @@ export default async function DriverNotificationsPage() {
     .eq("id", user.id)
     .single()
 
-  // FIX: Redirect to driver dashboard, not user dashboard
   if (!profile || profile.role !== "driver") {
-    redirect("/driver")  // Changed from "/dashboard"
+    redirect("/driver")
   }
 
   const { data: driverDetails } = await supabase
@@ -29,6 +28,13 @@ export default async function DriverNotificationsPage() {
     .select("*")
     .eq("user_id", user.id)
     .single()
+
+  // Fetch notifications
+  const { data: notifications } = await supabase
+    .from("notifications")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
 
   return (
     <div className="min-h-screen bg-background">
@@ -55,7 +61,24 @@ export default async function DriverNotificationsPage() {
           <h1 className="text-3xl font-bold">Notifications</h1>
           <p className="text-muted-foreground">Your driver notifications and alerts</p>
         </div>
-        <NotificationsList userId={user.id} />
+        
+        <div className="space-y-4">
+          {notifications && notifications.length > 0 ? (
+            notifications.map((notification) => (
+              <div key={notification.id} className="rounded-lg border p-4">
+                <div className="flex justify-between">
+                  <h3 className="font-medium">{notification.title}</h3>
+                  <span className="text-sm text-muted-foreground">
+                    {new Date(notification.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm">{notification.message}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-muted-foreground">No notifications yet.</p>
+          )}
+        </div>
       </main>
     </div>
   )
