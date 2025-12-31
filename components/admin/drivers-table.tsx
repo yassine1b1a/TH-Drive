@@ -15,24 +15,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Star, Ban, CheckCircle, Search, Car, AlertTriangle, MessageSquareWarning } from "lucide-react"
 import { toast } from "sonner"
-import type { Profile, DriverDetails } from "@/lib/types"
 
-interface Driver extends Profile {
-  driver_details: DriverDetails[]
+interface Driver {
+  id: string
+  full_name: string | null
+  email: string
+  rating: number | null
+  is_banned: boolean | null
+  ban_reason: string | null
+  warnings_count: number | null
+  created_at: string
+  driver_details: Array<{
+    id: string
+    license_number: string
+    vehicle_make: string
+    vehicle_model: string
+    vehicle_color: string
+    vehicle_plate: string
+    is_verified: boolean
+  }> | null
 }
 
 interface DriversTableProps {
@@ -40,7 +45,10 @@ interface DriversTableProps {
 }
 
 export function DriversTable({ drivers: initialDrivers }: DriversTableProps) {
-  const [drivers, setDrivers] = useState(initialDrivers)
+  // Filter out drivers with null or empty driver_details
+  const [drivers, setDrivers] = useState<Driver[]>(
+    initialDrivers.filter(driver => driver.driver_details && driver.driver_details.length > 0)
+  )
   const [search, setSearch] = useState("")
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null)
   const [banReason, setBanReason] = useState("")
@@ -59,14 +67,20 @@ export function DriversTable({ drivers: initialDrivers }: DriversTableProps) {
     setIsProcessing(true)
     try {
       const supabase = createClient()
-      const driverDetails = driver.driver_details[0]
-      if (!driverDetails) return
+      const driverDetails = driver.driver_details?.[0]
+      if (!driverDetails) {
+        toast.error("Driver details not found")
+        return
+      }
 
       await supabase.from("driver_details").update({ is_verified: true }).eq("id", driverDetails.id)
 
       setDrivers(
         drivers.map((d) =>
-          d.id === driver.id ? { ...d, driver_details: [{ ...driverDetails, is_verified: true }] } : d,
+          d.id === driver.id ? { 
+            ...d, 
+            driver_details: [{ ...driverDetails, is_verified: true }] 
+          } : d,
         ),
       )
       toast.success("Driver verified successfully")
@@ -233,7 +247,7 @@ export function DriversTable({ drivers: initialDrivers }: DriversTableProps) {
             </TableHeader>
             <TableBody>
               {filteredDrivers.map((driver) => {
-                const details = driver.driver_details[0]
+                const details = driver.driver_details?.[0]
                 return (
                   <TableRow key={driver.id}>
                     <TableCell>
@@ -251,7 +265,7 @@ export function DriversTable({ drivers: initialDrivers }: DriversTableProps) {
                           </span>
                         </div>
                       ) : (
-                        "N/A"
+                        "No vehicle info"
                       )}
                     </TableCell>
                     <TableCell>
@@ -288,7 +302,7 @@ export function DriversTable({ drivers: initialDrivers }: DriversTableProps) {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        {!details?.is_verified && !driver.is_banned && (
+                        {details && !details.is_verified && !driver.is_banned && (
                           <Button variant="outline" size="sm" onClick={() => handleVerify(driver)}>
                             <CheckCircle className="mr-1 h-3 w-3" />
                             Verify
