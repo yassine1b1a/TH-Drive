@@ -45,10 +45,7 @@ interface DriversTableProps {
 }
 
 export function DriversTable({ drivers: initialDrivers }: DriversTableProps) {
-  // Filter out drivers with null or empty driver_details
-  const [drivers, setDrivers] = useState<Driver[]>(
-    initialDrivers.filter(driver => driver.driver_details && driver.driver_details.length > 0)
-  )
+  const [drivers, setDrivers] = useState<Driver[]>(initialDrivers || [])
   const [search, setSearch] = useState("")
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null)
   const [banReason, setBanReason] = useState("")
@@ -68,21 +65,49 @@ export function DriversTable({ drivers: initialDrivers }: DriversTableProps) {
     try {
       const supabase = createClient()
       const driverDetails = driver.driver_details?.[0]
+      
       if (!driverDetails) {
-        toast.error("Driver details not found")
-        return
+        // If no driver_details exists, create one first
+        const { data: newDetails, error: createError } = await supabase
+          .from("driver_details")
+          .insert({
+            user_id: driver.id,
+            license_number: "NOT_PROVIDED",
+            vehicle_make: "NOT_PROVIDED",
+            vehicle_model: "NOT_PROVIDED",
+            vehicle_color: "NOT_PROVIDED",
+            vehicle_plate: "NOT_PROVIDED",
+            vehicle_year: new Date().getFullYear(),
+            is_verified: true
+          })
+          .select()
+          .single()
+        
+        if (createError) throw createError
+        
+        // Update local state
+        setDrivers(
+          drivers.map((d) =>
+            d.id === driver.id ? { 
+              ...d, 
+              driver_details: [newDetails] 
+            } : d,
+          ),
+        )
+      } else {
+        // Update existing driver_details
+        await supabase.from("driver_details").update({ is_verified: true }).eq("id", driverDetails.id)
+
+        setDrivers(
+          drivers.map((d) =>
+            d.id === driver.id ? { 
+              ...d, 
+              driver_details: [{ ...driverDetails, is_verified: true }] 
+            } : d,
+          ),
+        )
       }
-
-      await supabase.from("driver_details").update({ is_verified: true }).eq("id", driverDetails.id)
-
-      setDrivers(
-        drivers.map((d) =>
-          d.id === driver.id ? { 
-            ...d, 
-            driver_details: [{ ...driverDetails, is_verified: true }] 
-          } : d,
-        ),
-      )
+      
       toast.success("Driver verified successfully")
     } catch (error) {
       console.error("Error verifying driver:", error)
@@ -246,104 +271,112 @@ export function DriversTable({ drivers: initialDrivers }: DriversTableProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredDrivers.map((driver) => {
-                const details = driver.driver_details?.[0]
-                return (
-                  <TableRow key={driver.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{driver.full_name || "N/A"}</p>
-                        <p className="text-sm text-muted-foreground">{driver.email}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {details ? (
-                        <div className="flex items-center gap-2">
-                          <Car className="h-4 w-4 text-muted-foreground" />
-                          <span>
-                            {details.vehicle_color} {details.vehicle_make} {details.vehicle_model}
-                          </span>
+              {filteredDrivers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    No drivers found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredDrivers.map((driver) => {
+                  const details = driver.driver_details?.[0]
+                  return (
+                    <TableRow key={driver.id}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{driver.full_name || "N/A"}</p>
+                          <p className="text-sm text-muted-foreground">{driver.email}</p>
                         </div>
-                      ) : (
-                        "No vehicle info"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        {(driver.rating || 5.0).toFixed(1)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {driver.warnings_count && driver.warnings_count > 0 ? (
-                        <Badge variant="outline" className="text-orange-600">
-                          <AlertTriangle className="mr-1 h-3 w-3" />
-                          {driver.warnings_count} warning(s)
-                        </Badge>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">None</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {details?.is_verified ? (
-                        <Badge className="bg-green-100 text-green-800">Verified</Badge>
-                      ) : (
-                        <Badge variant="outline">Pending</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {driver.is_banned ? (
-                        <Badge variant="destructive">Banned</Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-green-600">
-                          Active
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        {details && !details.is_verified && !driver.is_banned && (
-                          <Button variant="outline" size="sm" onClick={() => handleVerify(driver)}>
-                            <CheckCircle className="mr-1 h-3 w-3" />
-                            Verify
-                          </Button>
-                        )}
-                        {!driver.is_banned && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedDriver(driver)
-                              setIsWarnDialogOpen(true)
-                            }}
-                            className="text-orange-600"
-                          >
-                            <MessageSquareWarning className="mr-1 h-3 w-3" />
-                            Warn
-                          </Button>
-                        )}
-                        {!driver.is_banned ? (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedDriver(driver)
-                              setIsBanDialogOpen(true)
-                            }}
-                          >
-                            <Ban className="mr-1 h-3 w-3" />
-                            Ban
-                          </Button>
+                      </TableCell>
+                      <TableCell>
+                        {details ? (
+                          <div className="flex items-center gap-2">
+                            <Car className="h-4 w-4 text-muted-foreground" />
+                            <span>
+                              {details.vehicle_color} {details.vehicle_make} {details.vehicle_model}
+                            </span>
+                          </div>
                         ) : (
-                          <Button variant="outline" size="sm" onClick={() => handleUnban(driver.id)}>
-                            Unban
-                          </Button>
+                          <span className="text-sm text-muted-foreground">No vehicle info</span>
                         )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                          {(driver.rating || 5.0).toFixed(1)}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {driver.warnings_count && driver.warnings_count > 0 ? (
+                          <Badge variant="outline" className="text-orange-600">
+                            <AlertTriangle className="mr-1 h-3 w-3" />
+                            {driver.warnings_count} warning(s)
+                          </Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">None</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {details?.is_verified ? (
+                          <Badge className="bg-green-100 text-green-800">Verified</Badge>
+                        ) : (
+                          <Badge variant="outline">Not verified</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {driver.is_banned ? (
+                          <Badge variant="destructive">Banned</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-green-600">
+                            Active
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {(!details || !details.is_verified) && !driver.is_banned && (
+                            <Button variant="outline" size="sm" onClick={() => handleVerify(driver)}>
+                              <CheckCircle className="mr-1 h-3 w-3" />
+                              Verify
+                            </Button>
+                          )}
+                          {!driver.is_banned && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedDriver(driver)
+                                setIsWarnDialogOpen(true)
+                              }}
+                              className="text-orange-600"
+                            >
+                              <MessageSquareWarning className="mr-1 h-3 w-3" />
+                              Warn
+                            </Button>
+                          )}
+                          {!driver.is_banned ? (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedDriver(driver)
+                                setIsBanDialogOpen(true)
+                              }}
+                            >
+                              <Ban className="mr-1 h-3 w-3" />
+                              Ban
+                            </Button>
+                          ) : (
+                            <Button variant="outline" size="sm" onClick={() => handleUnban(driver.id)}>
+                              Unban
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
+              )}
             </TableBody>
           </Table>
         </CardContent>
