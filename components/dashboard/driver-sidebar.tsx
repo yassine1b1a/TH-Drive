@@ -39,6 +39,12 @@ export function DriverSidebar({ user, vehicle }: DriverSidebarProps) {
     { href: "/driver/active", icon: Car, label: "Active Ride" },
     { href: "/driver/history", icon: Clock, label: "Ride History" },
     { href: "/driver/earnings", icon: Star, label: "Earnings" },
+    { 
+      href: "/dashboard/notifications", 
+      icon: Bell, 
+      label: "Notifications",
+      badge: unreadCount > 0 ? unreadCount : undefined
+    },
     { href: "/driver/support", icon: MessageCircle, label: "Support" },
     { href: "/driver/settings", icon: Settings, label: "Settings" },
   ]
