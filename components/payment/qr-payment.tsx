@@ -1,12 +1,11 @@
-// components/payment/qr-payment.tsx
+// components/payment/qr-payment.tsx - Alternative without qrcode.react
 'use client'
 
 import { useState, useEffect } from 'react'
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { QRCodeSVG } from "qrcode.react"
-import { Copy, Check, Download } from "lucide-react"
+import { Copy, Check, Download, QrCode } from "lucide-react"
 import { toast } from "sonner"
 
 interface QRPaymentProps {
@@ -49,56 +48,51 @@ export function QRPayment({ rideId, amount, commission, driverEarnings }: QRPaym
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const downloadQR = () => {
-    const svg = document.getElementById("qr-code-svg")
-    const svgData = new XMLSerializer().serializeToString(svg!)
-    const canvas = document.createElement("canvas")
-    const ctx = canvas.getContext("2d")
-    const img = new Image()
-    
-    img.onload = () => {
-      canvas.width = img.width
-      canvas.height = img.height
-      ctx!.drawImage(img, 0, 0)
-      const pngFile = canvas.toDataURL("image/png")
-      const downloadLink = document.createElement("a")
-      downloadLink.download = `th-drive-qr-${rideId}.png`
-      downloadLink.href = pngFile
-      downloadLink.click()
-    }
-    
-    img.src = "data:image/svg+xml;base64," + btoa(svgData)
+  const generateQRImageURL = () => {
+    // Generate QR code URL using a free service
+    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrCode)}`
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Scan QR Code</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <QrCode className="h-6 w-6" />
+          Scan QR Code
+        </CardTitle>
         <CardDescription>Show this QR code to the driver for payment</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* QR Code */}
+        {/* QR Code Image from external service */}
         <div className="flex flex-col items-center space-y-4">
           <div className="border-2 border-primary p-4 rounded-lg">
-            <QRCodeSVG
-              id="qr-code-svg"
-              value={qrCode}
-              size={200}
-              level="H"
-              includeMargin={true}
-            />
+            {qrCode ? (
+              <img 
+                src={generateQRImageURL()} 
+                alt="QR Code" 
+                className="w-48 h-48"
+              />
+            ) : (
+              <div className="w-48 h-48 flex items-center justify-center">
+                <div className="text-center">
+                  <QrCode className="h-12 w-12 text-muted-foreground mx-auto" />
+                  <p className="text-sm text-muted-foreground mt-2">Generating QR code...</p>
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Code Display */}
           <div className="text-center space-y-2">
             <p className="text-sm text-muted-foreground">Payment Code:</p>
             <div className="flex items-center gap-2 justify-center">
-              <code className="bg-muted px-3 py-1 rounded text-sm">{qrCode}</code>
+              <code className="bg-muted px-3 py-1 rounded text-sm font-mono">{qrCode || "Generating..."}</code>
               <Button
                 size="icon"
                 variant="outline"
                 onClick={copyToClipboard}
                 title="Copy code"
+                disabled={!qrCode}
               >
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
@@ -122,11 +116,23 @@ export function QRPayment({ rideId, amount, commission, driverEarnings }: QRPaym
           </div>
         </div>
 
+        {/* Instructions */}
+        <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-900">
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            <strong>How to use:</strong> Show this QR code to your driver. They will scan it to receive payment.
+          </p>
+        </div>
+
         {/* Actions */}
         <div className="flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={downloadQR}>
+          <Button 
+            variant="outline" 
+            className="flex-1" 
+            onClick={() => window.open(generateQRImageURL(), '_blank')}
+            disabled={!qrCode}
+          >
             <Download className="mr-2 h-4 w-4" />
-            Download QR
+            Open QR
           </Button>
           <Button className="flex-1" onClick={generateQRCode}>
             Regenerate QR
