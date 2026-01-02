@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { DollarSign, Paypal, Banknote, Smartphone, AlertCircle } from "lucide-react"
+import { DollarSign, CreditCard, Banknote, Smartphone, AlertCircle } from "lucide-react" // Changed Paypal to CreditCard
 import { toast } from "sonner"
 
 export function WithdrawForm({ availableBalance }: { availableBalance: number }) {
@@ -122,7 +122,7 @@ export function WithdrawForm({ availableBalance }: { availableBalance: number })
             <SelectContent>
               <SelectItem value="paypal">
                 <div className="flex items-center gap-2">
-                  <Paypal className="h-4 w-4" />
+                  <CreditCard className="h-4 w-4" /> {/* Changed icon */}
                   PayPal
                 </div>
               </SelectItem>
